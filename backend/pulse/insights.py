@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from .reasons import DEFAULT_HINT
 from .reasons import HINTS as REASON_HINTS
 from .reasons import NOT_RECORDED
 
@@ -145,10 +146,10 @@ def reasons(p, b):
     for r in rows:
         share, base = r["today"] / total, b["reasons"].get(r["reason"], 0)
         if r["today"] >= 5 and base > 0 and share / base >= 1.6 and share - base >= 0.08:
-            hint = REASON_HINTS.get(r["reason"], "worth investigating")
+            hint = REASON_HINTS.get(r["reason"], DEFAULT_HINT)
             out.append(insight(f"reason-{r['reason']}", "health", "warn", "zap",
                                f"“{r['reason']}” is {share / base:.1f}× its usual share of failures",
-                               f"{pct(share)} of today's failures vs {pct(base)} last week. This {hint}.",
+                               f"{pct(share)} of today's failures vs {pct(base)} last week. {hint}",
                                55 + min((share - base) * 100, 30)))
 
     by_kind = {}
@@ -160,7 +161,7 @@ def reasons(p, b):
         top_system = next((r for r in rows if r["kind"] == "system"), None)
         if system >= 0.4 and top_system:
             out.append(insight("reasons-mix", "health", "warn", "server", f"{pct(system)} of failures are system-side",
-                               f"Led by “{top_system['reason']}”, which {REASON_HINTS.get(top_system['reason'], 'needs a look')}.",
+                               f"Led by “{top_system['reason']}”. {REASON_HINTS.get(top_system['reason'], DEFAULT_HINT)}",
                                52))
         else:
             top = next(r for r in rows if r["kind"] != "unknown")

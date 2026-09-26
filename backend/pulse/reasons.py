@@ -21,18 +21,20 @@ RULES = [
 COMPILED = [(re.compile(p, re.I), label, kind) for p, label, kind in RULES]
 
 HINTS = {
-    "Insufficient funds": "customer-side, not a system fault",
-    "Account restricted (PND)": "accounts on Post-No-Debit, usually KYC or compliance holds that ops can review",
-    "Transfer limit exceeded": "customers hitting daily or per-transaction limits; worth reviewing limit tiers",
-    "Invalid beneficiary account": "customers entering wrong account numbers",
-    "Beneficiary bank not available": "points to a destination bank or NIP outage",
-    "Timed out at destination": "points to switch or destination latency",
-    "Connection error to provider": "the link to the payment provider is failing",
-    "Stuck in progress at provider": "the provider has not confirmed these yet",
-    "Request rejected (app/validation)": "the app sent requests the provider rejected; likely an app bug",
-    "Declined by destination bank": "destination banks are declining",
-    NOT_RECORDED: "failures saved without any message; a logging gap worth raising",
+    "Insufficient funds": "Customer-side, not a system fault.",
+    "Account restricted (PND)": "These accounts are on Post-No-Debit, usually KYC or compliance holds ops can review.",
+    "Transfer limit exceeded": "Customers are hitting daily or per-transaction limits. Worth reviewing limit tiers.",
+    "Invalid beneficiary account": "Customers are entering wrong account numbers.",
+    "Beneficiary bank not available": "Points to a destination bank or NIP outage.",
+    "Timed out at destination": "Points to switch or destination latency.",
+    "Connection error to provider": "The link to the payment provider is failing.",
+    "Stuck in progress at provider": "The provider has not confirmed these yet.",
+    "Request rejected (app/validation)": "The app is sending requests the provider rejects. Likely an app bug.",
+    "Declined by destination bank": "Destination banks are declining.",
+    NOT_RECORDED: "Failures saved without any message. A logging gap worth raising.",
 }
+
+DEFAULT_HINT = "Worth investigating."
 
 
 def classify(message):

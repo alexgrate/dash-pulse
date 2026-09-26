@@ -22,7 +22,7 @@ export default function BriefingScene({ data }) {
   const leadTone = TONES[lead.severity] ?? TONES.info
 
   return (
-    <div className="flex h-full flex-col gap-[3vh]">
+    <div className="flex h-full flex-col gap-[2.2vh]">
       <div className="flex items-end justify-between gap-[3vw]">
         <div className="flex items-center gap-3">
           <Sparkles className="size-[clamp(16px,1.3vw,28px)] text-brand-soft" />
@@ -49,21 +49,23 @@ export default function BriefingScene({ data }) {
             <InsightIcon insight={lead} className="size-1/2" />
           </div>
           <div className="min-w-0">
-            <div className="text-[clamp(28px,3.4vw,72px)] leading-[1.05] font-semibold tracking-[-0.02em]">
+            <div className="line-clamp-2 text-[clamp(24px,2.7vw,58px)] leading-[1.08] font-semibold tracking-[-0.02em]">
               {lead.title}
             </div>
-            <div className="mt-3 max-w-[70ch] text-[clamp(14px,1.3vw,28px)] text-slate-300">{lead.detail}</div>
+            <div className="mt-3 line-clamp-2 max-w-[80ch] text-[clamp(14px,1.2vw,26px)] text-slate-300">
+              {lead.detail}
+            </div>
           </div>
         </div>
       </motion.div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-3 grid-rows-2 gap-[1.4vw]">
+      <div className="grid min-h-0 flex-1 grid-cols-3 grid-rows-2 gap-[1vw]">
         {rest.slice(0, 6).map((item, i) => {
           const tone = TONES[item.severity] ?? TONES.info
           return (
             <motion.div
               key={item.id}
-              className="relative flex min-h-0 flex-col overflow-hidden rounded-3xl border border-white/[0.06] bg-white/[0.025] p-[1.4vw] backdrop-blur-xl"
+              className="relative flex min-h-0 flex-col justify-center overflow-hidden rounded-3xl border border-white/[0.06] bg-white/[0.025] px-[1.3vw] py-[1vw] backdrop-blur-xl"
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.25 + i * 0.1, ease: EASE }}
@@ -71,7 +73,7 @@ export default function BriefingScene({ data }) {
               <span className={`absolute inset-y-0 left-0 w-1 ${tone.bar}`} />
               <div className="flex items-center gap-3">
                 <div
-                  className={`grid size-[clamp(28px,2.2vw,46px)] place-items-center rounded-xl ${tone.bg} ${tone.text}`}
+                  className={`grid size-[clamp(22px,1.6vw,34px)] place-items-center rounded-lg ${tone.bg} ${tone.text}`}
                 >
                   <InsightIcon insight={item} className="size-1/2" />
                 </div>
@@ -79,8 +81,12 @@ export default function BriefingScene({ data }) {
                   {SCENE_NAMES[item.scene] ?? item.scene}
                 </span>
               </div>
-              <div className="mt-3 text-[clamp(15px,1.35vw,28px)] leading-snug font-semibold">{item.title}</div>
-              <div className="mt-2 line-clamp-3 text-[clamp(12px,0.95vw,20px)] text-muted">{item.detail}</div>
+              <div className="mt-2 line-clamp-2 text-[clamp(14px,1.15vw,24px)] leading-snug font-semibold">
+                {item.title}
+              </div>
+              <div className="mt-1 line-clamp-2 text-[clamp(12px,0.9vw,19px)] leading-snug text-muted">
+                {item.detail}
+              </div>
             </motion.div>
           )
         })}
