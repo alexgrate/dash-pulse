@@ -5,13 +5,13 @@ Every window is expressed in naive Lagos wall-clock time. Tables that store
 UTC (cba-mcs, billspayment, notification) get their window shifted back by
 one hour before querying. See DATA_NOTES.md.
 """
-import re
 from collections import defaultdict
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from django.db import connections
 
+from . import banks as bank_names
 from .geo import CITY_COORDS, NIGERIA_BOUNDS, nearest_city
 from .reasons import REASON_SQL
 from .reasons import group as group_reasons
@@ -92,8 +92,8 @@ BUCKET_SQL = """
     END"""
 
 GROUPS = {
-    "INTER": "Transfers",
-    "INTRA": "Transfers",
+    "INTER": "To other banks",
+    "INTRA": "Within Dash",
     "Airtime": "Airtime & Data",
     "Data Bundle": "Airtime & Data",
     "Betting & Lottery": "Betting",
@@ -425,17 +425,14 @@ def geography(w, now):
     }
 
 
-def bank_key(name):
-    return re.sub(r"\s+", " ", (name or "").strip()).upper() or "UNKNOWN BANK"
-
 
 def summarise_banks(rows):
     banks = {}
     for r in rows:
-        key = bank_key(r["bank"])
+        key = bank_names.key(r["bank"])
         b = banks.setdefault(key, {
             "key": key,
-            "bank": (r["bank"] or "Unknown bank").strip(),
+            "bank": bank_names.canonical(r["bank"]),
             "count": 0, "success": 0, "failed": 0, "pending": 0, "value": 0.0,
             "recent": {"count": 0, "failed": 0, "pending": 0},
         })

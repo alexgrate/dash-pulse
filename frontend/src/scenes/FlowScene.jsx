@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Dices, Gift, Receipt, Smartphone, UserPlus } from 'lucide-react'
+import { ArrowLeftRight, Dices, Gift, Receipt, Repeat, Smartphone, UserPlus } from 'lucide-react'
 import { motion } from 'motion/react'
 import AnimatedNumber from '../components/AnimatedNumber'
 import Delta from '../components/Delta'
@@ -7,7 +7,8 @@ import { naira, num } from '../lib/format'
 import { versus } from '../lib/insights'
 
 const GROUP_STYLE = {
-  Transfers: { icon: ArrowLeftRight, color: 'var(--color-accent)' },
+  'To other banks': { icon: ArrowLeftRight, color: 'var(--color-accent)' },
+  'Within Dash': { icon: Repeat, color: 'var(--color-brand-soft)' },
   'Airtime & Data': { icon: Smartphone, color: 'var(--color-glow)' },
   Betting: { icon: Dices, color: 'var(--color-warn)' },
   Bills: { icon: Receipt, color: 'var(--color-good)' },

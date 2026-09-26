@@ -185,3 +185,21 @@ class InsightTests(SimpleTestCase):
 
     def test_normal_banks_stay_quiet(self):
         self.assertNotIn("bank-GTBANK", ids(run(banks=self._banks(gt_recent_failed=2))))
+
+    def test_real_bank_names_are_cleaned(self):
+        from .banks import canonical, key
+        cases = {
+            "OPAY": "OPay",
+            "MONIEPOINT MICROFINANCE BANK": "Moniepoint MFB",
+            "PALMPAY": "PalmPay",
+            "GTBANK PLC": "GTBank",
+            "SmartCash Payment Service bank": "SmartCash PSB",
+            "MoMo PSB": "MoMo PSB",
+            "FIRST BANK OF NIGERIA": "First Bank",
+            "KUDA MICROFINANCE BANK": "Kuda MFB",
+            "ACCESS BANK PLC": "Access Bank",
+            None: "Unknown bank",
+        }
+        for raw, expected in cases.items():
+            self.assertEqual(canonical(raw), expected)
+        self.assertEqual(key("GTBANK PLC"), key("Guaranty Trust Bank"))

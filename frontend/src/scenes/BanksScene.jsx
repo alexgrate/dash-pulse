@@ -31,7 +31,7 @@ export default function BanksScene({ data }) {
           </div>
           <div className="text-right text-[clamp(11px,0.9vw,18px)] text-muted">
             <span className="tabular text-slate-100">{num(total.count)}</span> transfers ·{' '}
-            <span className="text-slate-100">{naira(total.value)}</span> · {num(bankCount)} banks
+            <span className="text-slate-100">{naira(total.value)}</span> to other banks · {num(bankCount)} banks
           </div>
         </div>
 

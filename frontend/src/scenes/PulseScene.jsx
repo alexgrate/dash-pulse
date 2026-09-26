@@ -41,7 +41,7 @@ export default function PulseScene({ data }) {
         </div>
 
         <div className="grid grid-cols-2 gap-[1vw]">
-          <Stat label="Value moved" delay={0.15}>
+          <Stat label="Value moved · all products" delay={0.15}>
             <AnimatedNumber value={today.value} format={naira} />
             <Delta today={today.value} yesterday={yesterday.value} label="vs yesterday" />
           </Stat>
