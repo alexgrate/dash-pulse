@@ -22,7 +22,9 @@ function bandPath(high, low, max) {
 
 export default function HourlyChart({ today, yesterday, hourNow, typical = null }) {
   const complete = today.slice(0, hourNow)
-  const max = Math.max(1, ...complete, ...yesterday, ...(typical?.hourly_high ?? [])) * 1.1
+  const scale = typical ? [...complete, ...typical.hourly_high] : [...complete, ...yesterday]
+  const max = Math.max(1, ...scale) * 1.15
+  const ghost = yesterday.map((v) => Math.min(v, max * 0.98))
   const band = typical && bandPath(typical.hourly_high, typical.hourly_low, max)
   const line = complete.length > 1 ? linePath(complete, max) : ''
   const area = line && `${line} L${x(complete.length - 1)},${H} L0,${H} Z`
@@ -66,7 +68,7 @@ export default function HourlyChart({ today, yesterday, hourNow, typical = null 
         )}
 
         <motion.path
-          d={linePath(yesterday, max)}
+          d={linePath(ghost, max)}
           fill="none"
           stroke="var(--color-muted)"
           strokeOpacity="0.55"

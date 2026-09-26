@@ -12,16 +12,20 @@ export default function PulseScene({ data }) {
   const typical = data.intelligence?.typical
 
   return (
-    <div className="grid h-full grid-cols-12 gap-[2.5vw]">
-      <div className="col-span-5 flex flex-col justify-center gap-[5vh]">
+    <div className="grid h-full grid-cols-12 grid-rows-[minmax(0,1fr)] gap-[2.5vw]">
+      <div className="col-span-5 flex min-h-0 flex-col justify-center gap-[3.5vh]">
         <div>
           <Eyebrow>Transactions today</Eyebrow>
           <AnimatedNumber
             value={today.count}
-            className="mt-2 block text-[clamp(64px,10vw,220px)] leading-[0.9] font-semibold tracking-[-0.04em]"
+            className="mt-2 block text-[clamp(56px,min(10vw,17vh),220px)] leading-[0.9] font-semibold tracking-[-0.04em]"
           />
           <div className="mt-5">
-            <Delta today={today.count} yesterday={yesterday.count} />
+            {typical?.so_far_median ? (
+              <Delta today={today.count} yesterday={typical.so_far_median} label={`vs a typical ${typical.weekday}`} />
+            ) : (
+              <Delta today={today.count} yesterday={yesterday.count} />
+            )}
           </div>
           {forecast && (
             <div className="mt-4 flex items-center gap-2 text-[clamp(12px,1vw,21px)] text-muted">
@@ -36,10 +40,10 @@ export default function PulseScene({ data }) {
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-[1.2vw]">
+        <div className="grid grid-cols-2 gap-[1vw]">
           <Stat label="Value moved" delay={0.15}>
             <AnimatedNumber value={today.value} format={naira} />
-            <Delta today={today.value} yesterday={yesterday.value} label="" />
+            <Delta today={today.value} yesterday={yesterday.value} label="vs yesterday" />
           </Stat>
           <Stat label="Success rate" delay={0.25}>
             <AnimatedNumber
@@ -53,11 +57,11 @@ export default function PulseScene({ data }) {
           </Stat>
           <Stat label="Failed" delay={0.35}>
             <AnimatedNumber value={today.failed} />
-            <Delta today={today.failed} yesterday={yesterday.failed} invert label="" />
+            <Delta today={today.failed} yesterday={yesterday.failed} invert label="vs yesterday" />
           </Stat>
           <Stat label="Active users" delay={0.45}>
             <AnimatedNumber value={users.today} />
-            <Delta today={users.today} yesterday={users.yesterday} label="" />
+            <Delta today={users.today} yesterday={users.yesterday} label="vs yesterday" />
           </Stat>
         </div>
       </div>
@@ -105,7 +109,7 @@ function Stat({ label, delay, children }) {
   return (
     <Panel delay={delay}>
       <Eyebrow>{label}</Eyebrow>
-      <div className="mt-2 text-[clamp(24px,2.6vw,56px)] font-semibold tracking-tight">{value}</div>
+      <div className="mt-1 text-[clamp(22px,min(2.6vw,4.6vh),56px)] font-semibold tracking-tight">{value}</div>
       <div className="mt-1">{sub}</div>
     </Panel>
   )
