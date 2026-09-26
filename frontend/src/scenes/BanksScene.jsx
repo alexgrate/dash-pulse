@@ -160,7 +160,8 @@ function BankHealth({ data, overall }) {
         ) : (
           <span className="flex items-center gap-2">
             <Landmark className="size-[1.1em]" />
-            Transfers to other banks are failing at {pct(overall)} overall today, spread evenly across banks.
+            Transfers to other banks are failing at {pct(overall)} overall today. No bank is far above its own usual
+            rate right now.
           </span>
         )}
       </div>
