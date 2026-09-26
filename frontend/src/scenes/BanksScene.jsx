@@ -9,8 +9,11 @@ const EASE = [0.16, 1, 0.3, 1]
 
 const isFailingNow = (bank) => Boolean(bank.failing_now)
 
-const rateTone = (rate, overall) => {
+const MIN_FOR_COLOUR = 30
+
+const rateTone = (rate, overall, settled) => {
   if (rate == null) return 'text-muted'
+  if (settled < MIN_FOR_COLOUR) return 'text-slate-300'
   if (rate - overall >= 0.15) return 'text-bad'
   if (rate - overall >= 0.07) return 'text-warn'
   return 'text-slate-300'
@@ -60,7 +63,7 @@ export default function BanksScene({ data }) {
                   {naira(bank.value)}
                 </span>
                 <span
-                  className={`tabular w-[7ch] text-right text-[clamp(13px,1.05vw,22px)] font-medium ${rateTone(bank.failure_rate, overall)}`}
+                  className={`tabular w-[7ch] text-right text-[clamp(13px,1.05vw,22px)] font-medium ${rateTone(bank.failure_rate, overall, bank.settled)}`}
                 >
                   {pct(bank.failure_rate)}
                 </span>
