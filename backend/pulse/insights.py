@@ -19,8 +19,11 @@ PRODUCT_LABELS = {
 MIN_VOLUME = 20
 MAP_MIN_CITIES = 3
 BANK_MIN_RECENT = 10
-BANK_FAILING_RATE = 0.35
-BANK_FAILING_GAP = 0.2
+BANK_SYSTEM_RATE = 0.25
+BANK_SYSTEM_GAP = 0.2
+BANK_MIN_DAY = 30
+BANK_DAY_RATE = 0.15
+BANK_DAY_GAP = 0.12
 
 
 def pct(x, digits=0):
@@ -300,51 +303,47 @@ def flag_banks(p, b):
         return
     for bank in data.get("all", data["items"]):
         r = bank["recent"]
-        usual = (base.get(bank["key"]) or {}).get("failure_rate")
-        bank["usual_rate"] = usual
+        usual = base.get(bank["key"]) or {}
+        bank["usual_rate"] = usual.get("failure_rate")
+        bank["usual_system_rate"] = usual.get("system_rate")
         bank["failing_now"] = bool(
             r["settled"] >= BANK_MIN_RECENT
-            and r["failure_rate"] is not None
-            and r.get("others_rate") is not None
-            and r["failure_rate"] >= BANK_FAILING_RATE
-            and r["failure_rate"] - r["others_rate"] >= BANK_FAILING_GAP
-            and (usual is None or r["failure_rate"] - usual >= BANK_FAILING_GAP)
+            and r["system_rate"] is not None
+            and r.get("others_system_rate") is not None
+            and r["system_rate"] >= BANK_SYSTEM_RATE
+            and r["system_rate"] - r["others_system_rate"] >= BANK_SYSTEM_GAP
+            and (bank["usual_system_rate"] is None or r["system_rate"] - bank["usual_system_rate"] >= BANK_SYSTEM_GAP)
         )
 
 
 def bank_health(p, b):
-    data, base = p.get("banks"), b.get("banks") or {}
+    data = p.get("banks")
     if not data or not data["items"]:
         return []
     out = []
     everyone = data.get("all", data["items"])
-    overall = data["total"]["failure_rate"] or 0
 
-    def usual_for(bank):
-        return (base.get(bank["key"]) or {}).get("failure_rate")
-
-    flagged = max((x for x in everyone if x.get("failing_now")), key=lambda x: x["recent"]["failure_rate"], default=None)
+    flagged = max((x for x in everyone if x.get("failing_now")), key=lambda x: x["recent"]["system_rate"], default=None)
     if flagged:
-        bank = flagged
-        r, usual = bank["recent"], usual_for(bank)
-        others = r["others_rate"]
-        was = f" Usually {pct(usual)}." if usual is not None else ""
-        out.append(insight(f"bank-{bank['key']}", "banks", "bad" if r["failure_rate"] >= 0.5 else "warn", "landmark",
-                           f"Transfers to {bank['bank']} failing at {pct(r['failure_rate'])} right now",
-                           f"{fmt(r['failed'])} of {fmt(r['settled'])} in the last {data['recent_minutes']} min; "
-                           f"other banks at {pct(others)}.{was} Points to {bank['bank']} or its NIP link.",
-                           70 + min((r["failure_rate"] - others) * 60, 25)))
+        r = flagged["recent"]
+        out.append(insight(
+            f"bank-{flagged['key']}", "banks", "bad" if r["system_rate"] >= 0.5 else "warn", "landmark",
+            f"Transfers to {flagged['bank']} failing at {pct(r['system_rate'])} right now",
+            f"{fmt(r['system_failed'])} of {fmt(r['settled'])} in the last {data['recent_minutes']} min failed with "
+            f"bank-side errors (bank unavailable, timeouts); other banks at {pct(r['others_system_rate'])}. "
+            f"Points to {flagged['bank']} or its NIP link.",
+            70 + min((r["system_rate"] - r["others_system_rate"]) * 60, 25)))
     else:
-        for bank in data["items"]:
-            rate, usual = bank["failure_rate"], usual_for(bank)
-            if rate is None or bank["settled"] < 10:
+        for bank in everyone:
+            rate, usual, others = bank["system_rate"], bank.get("usual_system_rate"), bank.get("others_system_rate")
+            if rate is None or others is None or bank["settled"] < BANK_MIN_DAY:
                 continue
-            if rate - overall >= 0.15 and (usual is None or (rate - usual >= 0.15 and rate >= usual * 2)):
+            if rate >= BANK_DAY_RATE and rate - others >= BANK_DAY_GAP and (usual is None or rate - usual >= BANK_DAY_GAP):
                 was = f"Usually {pct(usual)}" if usual is not None else "No history for this bank"
                 out.append(insight(f"bank-{bank['key']}", "banks", "warn", "landmark",
-                                   f"Transfers to {bank['bank']} failing at {pct(rate)} today",
-                                   f"{was}; other banks at {pct(overall)}. Points to {bank['bank']} or its NIP link.",
-                                   60))
+                                   f"Transfers to {bank['bank']} hitting bank-side errors today",
+                                   f"{pct(rate)} of {fmt(bank['settled'])} transfers failed on the bank's side. {was}; "
+                                   f"other banks at {pct(others)}. Points to {bank['bank']} or its NIP link.", 60))
                 break
 
     top = data["items"][0]

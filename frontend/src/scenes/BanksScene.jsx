@@ -52,7 +52,7 @@ export default function BanksScene({ data }) {
                   {isFailingNow(bank) && (
                     <span className="flex items-center gap-1.5 rounded-full bg-bad/15 px-2 py-0.5 text-[clamp(10px,0.8vw,16px)] text-bad">
                       <span className="size-1.5 animate-ping rounded-full bg-bad" />
-                      {pct(bank.recent.failure_rate)} in {minutes} min
+                      {pct(bank.recent.system_rate)} bank errors · {minutes} min
                     </span>
                   )}
                 </span>
@@ -160,8 +160,8 @@ function BankHealth({ data, overall }) {
         ) : (
           <span className="flex items-center gap-2">
             <Landmark className="size-[1.1em]" />
-            Transfers to other banks are failing at {pct(overall)} overall today. No bank is far above its own usual
-            rate right now.
+            Transfers to other banks are failing at {pct(overall)} overall today, mostly customer-side. No bank is
+            showing unusual bank-side errors.
           </span>
         )}
       </div>

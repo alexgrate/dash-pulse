@@ -146,7 +146,10 @@ def rewards_per_transaction(today):
 
 def bank_rates(today):
     rows = fetch(BANKS_SQL, {"since": today - timedelta(days=COMPARE_DAYS), "until": today, "recent": today})
-    return {k: {"settled": b["settled"], "failure_rate": b["failure_rate"]} for k, b in summarise_banks(rows).items()}
+    return {
+        k: {"settled": b["settled"], "failure_rate": b["failure_rate"], "system_rate": b["system_rate"]}
+        for k, b in summarise_banks(rows).items()
+    }
 
 
 def build(now):

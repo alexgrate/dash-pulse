@@ -160,30 +160,52 @@ class InsightTests(SimpleTestCase):
         item = next(i for i in run(funnel__signups={"today": 20, "yesterday": 20})["items"] if i["id"] == "signups")
         self.assertIn("typical Friday", item["title"])
 
-    def _banks(self, gt_recent_failed):
-        def bank(key, count, failed, recent_settled, recent_failed):
-            return {
-                "key": key, "bank": key.title(), "count": count, "settled": count, "failed": failed,
-                "failure_rate": failed / count, "value": 1000.0,
-                "recent": {"count": recent_settled, "settled": recent_settled, "failed": recent_failed,
-                           "pending": 0, "failure_rate": recent_failed / recent_settled},
-            }
-        items = [bank("OPAY", 100, 15, 20, 3), bank("PALMPAY", 80, 12, 15, 2), bank("GTBANK", 40, 8, 12, gt_recent_failed)]
+    def _banks(self, gt_recent_failed, gt_recent_system=None):
+        def part(settled, failed, system):
+            return {"count": settled, "settled": settled, "pending": 0, "failed": failed, "system_failed": system,
+                    "failure_rate": failed / settled, "system_rate": system / settled}
+
+        def bank(key, count, failed, system, r_settled, r_failed, r_system):
+            return {"key": key, "bank": key.title(), "value": 1000.0, **part(count, failed, system),
+                    "recent": part(r_settled, r_failed, r_system)}
+
+        system = gt_recent_failed if gt_recent_system is None else gt_recent_system
+        items = [bank("OPAY", 100, 15, 1, 20, 3, 0), bank("PALMPAY", 80, 12, 1, 15, 2, 0),
+                 bank("GTBANK", 40, 8, 1, 12, gt_recent_failed, system)]
         for b in items:
             others = [x for x in items if x is not b]
-            b["recent"]["others_rate"] = sum(x["recent"]["failed"] for x in others) / sum(
-                x["recent"]["settled"] for x in others)
+            for field, key in (("failed", "others_rate"), ("system_failed", "others_system_rate")):
+                b["recent"][key] = sum(x["recent"][field] for x in others) / sum(x["recent"]["settled"] for x in others)
+            b["others_system_rate"] = sum(x["system_failed"] for x in others) / sum(x["settled"] for x in others)
         return {"items": items, "all": items, "bank_count": 3, "recent_minutes": 30,
-                "total": {"count": 220, "value": 3000.0, "failure_rate": 35 / 220}}
+                "total": {"count": 220, "value": 3000.0, "failure_rate": 35 / 220, "system_rate": 3 / 220}}
 
     def test_bank_outage_is_flagged(self):
         result = run(banks=self._banks(gt_recent_failed=10))
         item = next(i for i in result["items"] if i["id"] == "bank-GTBANK")
         self.assertEqual(item["severity"], "bad")
-        self.assertIn("right now", item["title"])
+        self.assertIn("bank-side", item["detail"])
 
     def test_normal_banks_stay_quiet(self):
         self.assertNotIn("bank-GTBANK", ids(run(banks=self._banks(gt_recent_failed=2))))
+
+    def test_customer_side_failures_never_flag_a_bank(self):
+        self.assertNotIn("bank-GTBANK", ids(run(banks=self._banks(gt_recent_failed=6, gt_recent_system=0))))
+
+    def test_bank_near_its_own_normal_is_not_flagged(self):
+        base = deepcopy(BASELINES)
+        base["banks"] = {"GTBANK": {"settled": 500, "failure_rate": 0.29, "system_rate": 0.3}}
+        p = deepcopy(PAYLOAD)
+        p["banks"] = self._banks(gt_recent_failed=5)
+        self.assertNotIn("bank-GTBANK", {i["id"] for i in insights.build(p, base)["items"]})
+        self.assertFalse(next(x for x in p["banks"]["all"] if x["key"] == "GTBANK")["failing_now"])
+
+    def test_bank_far_above_its_own_normal_is_flagged(self):
+        base = deepcopy(BASELINES)
+        base["banks"] = {"GTBANK": {"settled": 500, "failure_rate": 0.2, "system_rate": 0.02}}
+        p = deepcopy(PAYLOAD)
+        p["banks"] = self._banks(gt_recent_failed=10)
+        self.assertIn("bank-GTBANK", {i["id"] for i in insights.build(p, base)["items"]})
 
     def test_real_bank_names_are_cleaned(self):
         from .banks import canonical, key
@@ -202,20 +224,3 @@ class InsightTests(SimpleTestCase):
         for raw, expected in cases.items():
             self.assertEqual(canonical(raw), expected)
         self.assertEqual(key("GTBANK PLC"), key("Guaranty Trust Bank"))
-
-    def test_bank_near_its_own_normal_is_not_flagged(self):
-        banks = self._banks(gt_recent_failed=5)
-        base = deepcopy(BASELINES)
-        base["banks"] = {"GTBANK": {"settled": 500, "failure_rate": 0.29}}
-        p = deepcopy(PAYLOAD)
-        p["banks"] = banks
-        result = insights.build(p, base)
-        self.assertNotIn("bank-GTBANK", {i["id"] for i in result["items"]})
-        self.assertFalse(next(x for x in p["banks"]["all"] if x["key"] == "GTBANK")["failing_now"])
-
-    def test_bank_far_above_its_own_normal_is_flagged(self):
-        base = deepcopy(BASELINES)
-        base["banks"] = {"GTBANK": {"settled": 500, "failure_rate": 0.2}}
-        p = deepcopy(PAYLOAD)
-        p["banks"] = self._banks(gt_recent_failed=10)
-        self.assertIn("bank-GTBANK", {i["id"] for i in insights.build(p, base)["items"]})

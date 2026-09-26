@@ -14,6 +14,7 @@ from django.db import connections
 from . import banks as bank_names
 from .geo import CITY_COORDS, NIGERIA_BOUNDS, nearest_city
 from .reasons import REASON_SQL
+from .reasons import classify as classify_reason
 from .reasons import group as group_reasons
 
 LAGOS = ZoneInfo("Africa/Lagos")
@@ -430,34 +431,38 @@ def summarise_banks(rows):
         b = banks.setdefault(key, {
             "key": key,
             "bank": bank_names.canonical(r["bank"]),
-            "count": 0, "success": 0, "failed": 0, "pending": 0, "value": 0.0,
-            "recent": {"count": 0, "failed": 0, "pending": 0},
+            "count": 0, "success": 0, "failed": 0, "system_failed": 0, "pending": 0, "value": 0.0,
+            "recent": {"count": 0, "failed": 0, "system_failed": 0, "pending": 0},
         })
         n = int(r["n"])
+        system = r["outcome"] == "FAILED" and classify_reason(r.get("reason"))[1] == "system"
         b["count"] += n
         if r["outcome"] == "SUCCESS":
             b["success"] += n
             b["value"] += float(r["value"] or 0)
         elif r["outcome"] == "FAILED":
             b["failed"] += n
+            b["system_failed"] += n if system else 0
         elif r["outcome"] == "PENDING":
             b["pending"] += n
         if r.get("recent"):
-            b["recent"]["count"] += n
+            rs = b["recent"]
+            rs["count"] += n
             if r["outcome"] in ("FAILED", "PENDING"):
-                b["recent"][r["outcome"].lower()] += n
+                rs[r["outcome"].lower()] += n
+            rs["system_failed"] += n if system else 0
     for b in banks.values():
-        b["settled"] = b["count"] - b["pending"]
-        b["failure_rate"] = round(b["failed"] / b["settled"], 4) if b["settled"] else None
-        rs = b["recent"]
-        rs["settled"] = rs["count"] - rs["pending"]
-        rs["failure_rate"] = round(rs["failed"] / rs["settled"], 4) if rs["settled"] else None
+        for part in (b, b["recent"]):
+            part["settled"] = part["count"] - part["pending"]
+            part["failure_rate"] = round(part["failed"] / part["settled"], 4) if part["settled"] else None
+            part["system_rate"] = round(part["system_failed"] / part["settled"], 4) if part["settled"] else None
     return banks
 
 
 BANKS_SQL = f"""
     SELECT l.BENEFICIARY_BANK_NAME AS bank,
            {OUTCOME_SQL} AS outcome,
+           {REASON_SQL} AS reason,
            l.CREATED >= %(recent)s AS recent,
            COUNT(*) AS n,
            COALESCE(SUM(l.AMOUNT), 0) AS value
@@ -466,8 +471,14 @@ BANKS_SQL = f"""
            ON p.payment_reference = l.PAYMENT_REFERENCE COLLATE utf8mb4_unicode_ci
     WHERE l.TRANSACTION_TYPE = 'INTER'
       AND l.CREATED >= %(since)s AND l.CREATED < %(until)s
-    GROUP BY bank, outcome, recent
+    GROUP BY bank, outcome, reason, recent
 """
+
+
+def others_rate(items, bank, part, field):
+    failed = sum((x if part is None else x[part])[field] for x in items if x is not bank)
+    settled = sum((x if part is None else x[part])["settled"] for x in items if x is not bank)
+    return round(failed / settled, 4) if settled else None
 
 
 def banks(w):
@@ -475,11 +486,9 @@ def banks(w):
     summary = summarise_banks(fetch(BANKS_SQL, {"since": w["today"], "until": w["now"], "recent": recent}))
     items = sorted(summary.values(), key=lambda b: -b["count"])
     for b in items:
-        others_failed = sum(x["recent"]["failed"] for x in items if x is not b)
-        others_settled = sum(x["recent"]["settled"] for x in items if x is not b)
-        others = others_failed / others_settled if others_settled else None
-        r = b["recent"]
-        r["others_rate"] = round(others, 4) if others is not None else None
+        b["others_system_rate"] = others_rate(items, b, None, "system_failed")
+        b["recent"]["others_rate"] = others_rate(items, b, "recent", "failed")
+        b["recent"]["others_system_rate"] = others_rate(items, b, "recent", "system_failed")
         b["failing_now"] = False
     count = sum(b["count"] for b in items)
     failed = sum(b["failed"] for b in items)
@@ -493,6 +502,7 @@ def banks(w):
             "count": count,
             "value": sum(b["value"] for b in items),
             "failure_rate": round(failed / settled, 4) if settled else None,
+            "system_rate": round(sum(b["system_failed"] for b in items) / settled, 4) if settled else None,
         },
     }
 
