@@ -17,6 +17,7 @@ PRODUCT_LABELS = {
 }
 
 MIN_VOLUME = 20
+MAP_MIN_CITIES = 3
 
 
 def pct(x, digits=0):
@@ -245,7 +246,7 @@ def geography(p):
     g, out = p["geography"], []
     located, cities = g["located"], g["cities"]
     recent_total = sum(c["recent"] for c in cities)
-    if not located or not cities:
+    if not located or len(cities) < MAP_MIN_CITIES:
         return out
     if recent_total >= 20:
         for c in cities:
@@ -290,7 +291,51 @@ def rewards(p, b):
                     f"{per_tx:.2f} payouts per transaction, about {naira(r['value'] / tx)} each", 12)]
 
 
-RULES = 9
+def bank_health(p, b):
+    data, base = p.get("banks"), b.get("banks") or {}
+    if not data or not data["items"]:
+        return []
+    out = []
+    everyone = data.get("all", data["items"])
+    overall = data["total"]["failure_rate"] or 0
+
+    def usual_for(bank):
+        return (base.get(bank["key"]) or {}).get("failure_rate")
+
+    flagged = max((x for x in everyone if x.get("failing_now")), key=lambda x: x["recent"]["failure_rate"], default=None)
+    if flagged:
+        bank = flagged
+        r, usual = bank["recent"], usual_for(bank)
+        others = r["others_rate"]
+        was = f" Usually {pct(usual)}." if usual is not None else ""
+        out.append(insight(f"bank-{bank['key']}", "banks", "bad" if r["failure_rate"] >= 0.5 else "warn", "landmark",
+                           f"Transfers to {bank['bank']} failing at {pct(r['failure_rate'])} right now",
+                           f"{fmt(r['failed'])} of {fmt(r['settled'])} in the last {data['recent_minutes']} min; "
+                           f"other banks at {pct(others)}.{was} Points to {bank['bank']} or its NIP link.",
+                           70 + min((r["failure_rate"] - others) * 60, 25)))
+    else:
+        for bank in data["items"]:
+            rate, usual = bank["failure_rate"], usual_for(bank)
+            if rate is None or bank["settled"] < 10:
+                continue
+            if rate - overall >= 0.15 and (usual is None or (rate - usual >= 0.15 and rate >= usual * 2)):
+                was = f"Usually {pct(usual)}" if usual is not None else "No history for this bank"
+                out.append(insight(f"bank-{bank['key']}", "banks", "warn", "landmark",
+                                   f"Transfers to {bank['bank']} failing at {pct(rate)} today",
+                                   f"{was}; other banks at {pct(overall)}. Points to {bank['bank']} or its NIP link.",
+                                   60))
+                break
+
+    top = data["items"][0]
+    if data["total"]["count"] >= MIN_VOLUME:
+        share = top["count"] / data["total"]["count"]
+        out.append(insight("bank-top", "banks", "info", "landmark", f"{pct(share)} of transfers go to {top['bank']}",
+                           f"{fmt(top['count'])} of {fmt(data['total']['count'])} transfers to other banks today, "
+                           f"worth {naira(top['value'])}", 14))
+    return out
+
+
+RULES = 10
 
 
 def build(p, b):
@@ -305,6 +350,7 @@ def build(p, b):
         *onboarding(p, b),
         *geography(p),
         *rewards(p, b),
+        *bank_health(p, b),
     ]
     items.sort(key=lambda i: -i["score"])
     return {

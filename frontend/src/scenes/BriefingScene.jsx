@@ -98,6 +98,7 @@ export default function BriefingScene({ data }) {
 const SCENE_NAMES = {
   pulse: 'Pulse',
   flow: 'Money & people',
+  banks: 'Banks & devices',
   map: 'Map',
   funnel: 'Onboarding',
   health: 'Health',

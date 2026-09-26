@@ -6,7 +6,7 @@ import Ticker from './components/Ticker'
 import TopBar from './components/TopBar'
 import { usePulse } from './hooks/usePulse'
 import { needsAttention, topFor } from './lib/insights'
-import { alertScene, ATTENTION_BONUS_SECONDS, scenes } from './scenes'
+import { alertScene, ATTENTION_BONUS_SECONDS, isShowable, scenes } from './scenes'
 
 export default function App() {
   const { data, offline, clockOffset } = usePulse()
@@ -14,9 +14,9 @@ export default function App() {
   const alert = Boolean(data?.health?.alert)
 
   const playlist = useMemo(() => {
-    const base = scenes.map((s) =>
-      needsAttention(data, s.id) ? { ...s, seconds: s.seconds + ATTENTION_BONUS_SECONDS } : s,
-    )
+    const base = scenes
+      .filter((s) => isShowable(s, data))
+      .map((s) => (needsAttention(data, s.id) ? { ...s, seconds: s.seconds + ATTENTION_BONUS_SECONDS } : s))
     return alert ? [alertScene, ...base] : base
   }, [data, alert])
 

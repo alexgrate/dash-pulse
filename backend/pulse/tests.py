@@ -60,6 +60,9 @@ PAYLOAD = {
 def run(**changes):
     p = deepcopy(PAYLOAD)
     for path, value in changes.items():
+        if "__" not in path:
+            p[path] = value
+            continue
         target = p
         *keys, last = path.split("__")
         for k in keys:
@@ -156,3 +159,29 @@ class InsightTests(SimpleTestCase):
     def test_signups_compare_with_typical_weekday(self):
         item = next(i for i in run(funnel__signups={"today": 20, "yesterday": 20})["items"] if i["id"] == "signups")
         self.assertIn("typical Friday", item["title"])
+
+    def _banks(self, gt_recent_failed):
+        def bank(key, count, failed, recent_settled, recent_failed):
+            return {
+                "key": key, "bank": key.title(), "count": count, "settled": count, "failed": failed,
+                "failure_rate": failed / count, "value": 1000.0,
+                "recent": {"count": recent_settled, "settled": recent_settled, "failed": recent_failed,
+                           "pending": 0, "failure_rate": recent_failed / recent_settled},
+            }
+        items = [bank("OPAY", 100, 15, 20, 3), bank("PALMPAY", 80, 12, 15, 2), bank("GTBANK", 40, 8, 12, gt_recent_failed)]
+        for b in items:
+            others = [x for x in items if x is not b]
+            rate = sum(x["recent"]["failed"] for x in others) / sum(x["recent"]["settled"] for x in others)
+            b["recent"]["others_rate"] = rate
+            b["failing_now"] = b["recent"]["failure_rate"] >= 0.35 and b["recent"]["failure_rate"] - rate >= 0.2
+        return {"items": items, "all": items, "bank_count": 3, "recent_minutes": 30,
+                "total": {"count": 220, "value": 3000.0, "failure_rate": 35 / 220}}
+
+    def test_bank_outage_is_flagged(self):
+        result = run(banks=self._banks(gt_recent_failed=10))
+        item = next(i for i in result["items"] if i["id"] == "bank-GTBANK")
+        self.assertEqual(item["severity"], "bad")
+        self.assertIn("right now", item["title"])
+
+    def test_normal_banks_stay_quiet(self):
+        self.assertNotIn("bank-GTBANK", ids(run(banks=self._banks(gt_recent_failed=2))))

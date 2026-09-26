@@ -4,6 +4,7 @@ Fake-data generator for the local MySQL mirror (docker-compose, port 3307).
     python dev-db/seed.py history --reset [--scale 1.0]      # backfill launch -> now
     python dev-db/seed.py live [--interval 3] [--speed 10]   # keep adding "now" events
     python dev-db/seed.py live --chaos                       # spike transfer failures
+    python dev-db/seed.py live --bank-outage GTBank          # one destination bank failing
 
 Volumes, mixes and failure rates copy what discovery found in production
 (see DATA_NOTES.md). Production quirks are mirrored on purpose:
@@ -74,6 +75,7 @@ OUTCOMES = {
     "Transport and Toll Payment": (0.0, 1.0, 0.0, 0.0),
 }
 CHAOS_INTER_FAIL = 0.45
+BANK_OUTAGE_FAIL = 0.6
 
 FAIL_REASONS = {
     "Insufficient funds ({acct})": 935,
@@ -320,9 +322,10 @@ class Writer:
 # ─── Event generation ───────────────────────────────────────────────
 
 class Seeder:
-    def __init__(self, writer, chaos=False):
+    def __init__(self, writer, chaos=False, bank_outage=None):
         self.w = writer
         self.chaos = chaos
+        self.bank_outage = bank_outage
         self.next_uid = 1
         self.holders = []       # user ids with an opened account
         self.enrollments = []   # quest enrollment ids
@@ -353,10 +356,14 @@ class Seeder:
         local = ts + WAT
         is_bill = kind not in ("INTER", "INTRA")
         bank = pick_bank() if kind == "INTER" else ("Dash MFB" if kind == "INTRA" else None)
+        outage = bool(self.bank_outage) and bank == self.bank_outage and random.random() < BANK_OUTAGE_FAIL
+        if outage:
+            outcome = "FAILED"
         cba_code = None if outcome in ("NULL_SUCCESS", "PENDING") else ("false" if outcome == "FAILED" else "true")
         message, provider_message = None, None
         if outcome == "FAILED":
-            template = pick_chaos_reason() if self.chaos and kind == "INTER" else pick_reason()
+            template = ("Beneficiary Institution not available" if outage
+                        else pick_chaos_reason() if self.chaos and kind == "INTER" else pick_reason())
             provider_message = template.format(acct=account_number(uid)) if template else None
             if template and template.startswith("Account on PND") and random.random() < 0.33:
                 message = "Account on PND, debit not allowed on this account"
@@ -557,7 +564,7 @@ def load_state(conn, seeder):
 def live(args):
     conn = connect()
     writer = Writer(conn)
-    seeder = Seeder(writer, chaos=args.chaos)
+    seeder = Seeder(writer, chaos=args.chaos, bank_outage=args.bank_outage)
     load_state(conn, seeder)
     print(f"Live: every {args.interval}s at {args.speed}x real volume"
           f"{'  [CHAOS: transfer failures spiking]' if args.chaos else ''}. Ctrl+C to stop.")
@@ -583,6 +590,7 @@ def main():
     lv.add_argument("--interval", type=float, default=3.0, help="seconds between batches")
     lv.add_argument("--speed", type=float, default=10.0, help="volume multiplier so the screen visibly moves")
     lv.add_argument("--chaos", action="store_true", help=f"force {CHAOS_INTER_FAIL * 100:.0f}%% INTER failures")
+    lv.add_argument("--bank-outage", metavar="BANK", help="make transfers to one bank fail, e.g. \"GTBank\"")
     args = parser.parse_args()
     history(args) if args.command == "history" else live(args)
 

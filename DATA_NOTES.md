@@ -66,3 +66,10 @@ password, salt, BVN, NIN, *_IMAGE_PATH, names, phone, email, balances (without a
 ## Clock
 - "Now" comes from the database (SELECT UTC_TIMESTAMP() + 1h), not the machine running Django. The dashboard server's Windows clock was found 1 hour ahead on 26 Sep 2026, which made the current hour look empty and flagged false "quiet hour" insights.
 - The API returns server_time (DB-corrected); the frontend clock applies the difference, so the on-screen time is right even if the machine clock is wrong.
+
+## Banks & devices (pulse/queries.py: banks, devices)
+- Customer location is not captured in production (transaction coordinates are empty or one fixed Lagos point; login LOCATION is blank; bills have none). The Map scene hides itself when fewer than 3 cities show up (MAP_MIN_CITIES).
+- Banks: inter-bank transfers today grouped by BENEFICIARY_BANK_NAME (names normalised to upper case for grouping), with count, successful value and failure rate.
+- A bank is "failing now" when, over the last 30 minutes, it has at least 8 settled transfers, a failure rate of 35%+, and is 20+ points worse than all other banks combined (BANK_* constants). The backend sets failing_now; the screen and the insight both use it.
+- Devices: distinct users who logged in today by DEVICE_OS (Android / iOS).
+- Test locally: `python dev-db/seed.py live --speed 60 --bank-outage GTBank`

@@ -43,7 +43,7 @@ export default function MapScene({ data }) {
             className="mt-3 block text-[clamp(40px,4.6vw,100px)] leading-none font-semibold tracking-[-0.04em]"
           />
           <div className="mt-3 text-[clamp(12px,0.95vw,20px)] text-muted">
-            across <span className="text-slate-200">{num(cityCount)}</span> cities today
+            across <span className="text-slate-200">{num(cityCount)}</span> {cityCount === 1 ? 'city' : 'cities'} today
           </div>
         </Panel>
 

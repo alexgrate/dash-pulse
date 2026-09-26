@@ -5,6 +5,7 @@ Every window is expressed in naive Lagos wall-clock time. Tables that store
 UTC (cba-mcs, billspayment, notification) get their window shifted back by
 one hour before querying. See DATA_NOTES.md.
 """
+import re
 from collections import defaultdict
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -34,6 +35,10 @@ ALERT_MIN_GAP = 0.10
 FUNNEL_DAYS = 30
 MAP_RECENT_MINUTES = 10
 MAP_GRID_DEGREES = 0.1
+BANK_RECENT_MINUTES = 30
+BANK_MIN_RECENT = 8
+BANK_FAILING_RATE = 0.35
+BANK_FAILING_GAP = 0.2
 
 PHASE_ORDER = [
     "EMAIL_VERIFICATION",
@@ -420,6 +425,103 @@ def geography(w, now):
     }
 
 
+def bank_key(name):
+    return re.sub(r"\s+", " ", (name or "").strip()).upper() or "UNKNOWN BANK"
+
+
+def summarise_banks(rows):
+    banks = {}
+    for r in rows:
+        key = bank_key(r["bank"])
+        b = banks.setdefault(key, {
+            "key": key,
+            "bank": (r["bank"] or "Unknown bank").strip(),
+            "count": 0, "success": 0, "failed": 0, "pending": 0, "value": 0.0,
+            "recent": {"count": 0, "failed": 0, "pending": 0},
+        })
+        n = int(r["n"])
+        b["count"] += n
+        if r["outcome"] == "SUCCESS":
+            b["success"] += n
+            b["value"] += float(r["value"] or 0)
+        elif r["outcome"] == "FAILED":
+            b["failed"] += n
+        elif r["outcome"] == "PENDING":
+            b["pending"] += n
+        if r.get("recent"):
+            b["recent"]["count"] += n
+            if r["outcome"] in ("FAILED", "PENDING"):
+                b["recent"][r["outcome"].lower()] += n
+    for b in banks.values():
+        b["settled"] = b["count"] - b["pending"]
+        b["failure_rate"] = round(b["failed"] / b["settled"], 4) if b["settled"] else None
+        rs = b["recent"]
+        rs["settled"] = rs["count"] - rs["pending"]
+        rs["failure_rate"] = round(rs["failed"] / rs["settled"], 4) if rs["settled"] else None
+    return banks
+
+
+BANKS_SQL = f"""
+    SELECT l.BENEFICIARY_BANK_NAME AS bank,
+           {OUTCOME_SQL} AS outcome,
+           l.CREATED >= %(recent)s AS recent,
+           COUNT(*) AS n,
+           COALESCE(SUM(l.AMOUNT), 0) AS value
+    FROM {LEGACY} l
+    LEFT JOIN {PAYMENTS} p
+           ON p.payment_reference = l.PAYMENT_REFERENCE COLLATE utf8mb4_unicode_ci
+    WHERE l.TRANSACTION_TYPE = 'INTER'
+      AND l.CREATED >= %(since)s AND l.CREATED < %(until)s
+    GROUP BY bank, outcome, recent
+"""
+
+
+def banks(w):
+    recent = max(w["today"], w["now"] - timedelta(minutes=BANK_RECENT_MINUTES))
+    summary = summarise_banks(fetch(BANKS_SQL, {"since": w["today"], "until": w["now"], "recent": recent}))
+    items = sorted(summary.values(), key=lambda b: -b["count"])
+    for b in items:
+        others_failed = sum(x["recent"]["failed"] for x in items if x is not b)
+        others_settled = sum(x["recent"]["settled"] for x in items if x is not b)
+        others = others_failed / others_settled if others_settled else None
+        r = b["recent"]
+        r["others_rate"] = round(others, 4) if others is not None else None
+        b["failing_now"] = bool(
+            r["settled"] >= BANK_MIN_RECENT
+            and others is not None
+            and r["failure_rate"] >= BANK_FAILING_RATE
+            and r["failure_rate"] - others >= BANK_FAILING_GAP
+        )
+    count = sum(b["count"] for b in items)
+    failed = sum(b["failed"] for b in items)
+    settled = sum(b["settled"] for b in items)
+    return {
+        "items": items[:8],
+        "all": items,
+        "bank_count": len(items),
+        "recent_minutes": BANK_RECENT_MINUTES,
+        "total": {
+            "count": count,
+            "value": sum(b["value"] for b in items),
+            "failure_rate": round(failed / settled, 4) if settled else None,
+        },
+    }
+
+
+def devices(w):
+    rows = fetch(f"""
+        SELECT UPPER(TRIM(DEVICE_OS)) AS os, COUNT(DISTINCT USERNAME) AS users
+        FROM {LOGINS}
+        WHERE LOGIN_TIME >= %(today)s AND LOGIN_TIME < %(now)s
+        GROUP BY os
+    """, w)
+    out = {"android": 0, "ios": 0, "other": 0}
+    for r in rows:
+        os_name = (r["os"] or "").lower()
+        out[os_name if os_name in ("android", "ios") else "other"] += int(r["users"])
+    return out
+
+
 def build_pulse(now=None):
     now = now or lagos_now()
     w = windows(now)
@@ -437,4 +539,6 @@ def build_pulse(now=None):
         "health": health(w, now, tx["products"]),
         "funnel": funnel(w, now),
         "geography": geography(w, now),
+        "banks": banks(w),
+        "devices": devices(w),
     }

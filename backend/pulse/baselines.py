@@ -3,7 +3,7 @@ from statistics import median
 
 from django.core.cache import cache
 
-from .queries import LEGACY, LIVENESS, ONBOARDING, OUTCOME_SQL, PAYMENTS, REWARDS, WAT, fetch
+from .queries import BANKS_SQL, LEGACY, LIVENESS, ONBOARDING, OUTCOME_SQL, PAYMENTS, REWARDS, WAT, fetch, summarise_banks
 from .reasons import REASON_SQL
 from .reasons import group as group_reasons
 
@@ -144,6 +144,11 @@ def rewards_per_transaction(today):
     return {"per_tx": int(rewards["n"]) / n, "value_per_tx": float(rewards["value"]) / n} if n else None
 
 
+def bank_rates(today):
+    rows = fetch(BANKS_SQL, {"since": today - timedelta(days=COMPARE_DAYS), "until": today, "recent": today})
+    return {k: {"settled": b["settled"], "failure_rate": b["failure_rate"]} for k, b in summarise_banks(rows).items()}
+
+
 def build(now):
     today = now.replace(hour=0, minute=0, second=0)
     day = today.date().isoformat()
@@ -156,4 +161,5 @@ def build(now):
         "products": cached(f"pulse:products:{day}", lambda: product_rates(today)),
         "liveness": cached(f"pulse:liveness:{day}", lambda: liveness_rate(today)),
         "rewards": cached(f"pulse:rewards:{day}", lambda: rewards_per_transaction(today)),
+        "banks": cached(f"pulse:banks:{day}", lambda: bank_rates(today)),
     }
