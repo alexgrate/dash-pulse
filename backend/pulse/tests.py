@@ -3,6 +3,7 @@ from copy import deepcopy
 from django.test import SimpleTestCase
 
 from . import insights
+from .reasons import classify
 
 TYPICAL = {
     "weekday": "Friday",
@@ -23,6 +24,7 @@ BASELINES = {
     "products": {"Utilities": {"count": 200, "failure_rate": 0.05, "reversal_rate": 0.08}},
     "liveness": 0.25,
     "rewards": {"per_tx": 1.0, "value_per_tx": 100},
+    "signups": 50,
 }
 
 PAYLOAD = {
@@ -35,8 +37,8 @@ PAYLOAD = {
         "recent": {"count": 40, "failed": 6, "settled": 40, "failure_rate": 0.15},
         "baseline": {"failure_rate": 0.15},
         "reasons": [
-            {"reason": "Insufficient funds", "today": 30, "recent": 2},
-            {"reason": "Beneficiary bank not available", "today": 5, "recent": 1},
+            {"reason": "Insufficient funds", "kind": "customer", "today": 30, "recent": 2},
+            {"reason": "Beneficiary bank not available", "kind": "system", "today": 5, "recent": 1},
         ],
         "products": [{"kind": "Utilities", "count": 40, "failure_rate": 0.05, "reversal_rate": 0.08}],
         "liveness": {"failure_rate": 0.25},
@@ -50,7 +52,8 @@ PAYLOAD = {
         "signups": {"today": 50, "yesterday": 50},
     },
     "geography": {"located": 0, "cities": [], "recent_minutes": 10},
-    "rewards": {"today": {"count": 500, "value": 50000}},
+    "rewards": {"today": {"count": 500, "value": 50000}, "last_paid_at": "2026-09-26T13:00:00"},
+    "generated_at": "2026-09-26T14:00:00",
 }
 
 
@@ -105,8 +108,8 @@ class InsightTests(SimpleTestCase):
 
     def test_reason_shift_is_explained(self):
         reasons = [
-            {"reason": "Insufficient funds", "today": 15, "recent": 1},
-            {"reason": "Beneficiary bank not available", "today": 25, "recent": 10},
+            {"reason": "Insufficient funds", "kind": "customer", "today": 15, "recent": 1},
+            {"reason": "Beneficiary bank not available", "kind": "system", "today": 25, "recent": 10},
         ]
         items = run(health__reasons=reasons)["items"]
         shift = next(i for i in items if i["id"] == "reason-Beneficiary bank not available")
@@ -125,3 +128,31 @@ class InsightTests(SimpleTestCase):
         result = insights.build(deepcopy(PAYLOAD), bare)
         self.assertIsNone(result["forecast"])
         self.assertIsNone(result["typical"])
+
+    def test_account_numbers_never_reach_the_screen(self):
+        for raw in ("Insufficient funds (0011058788)", "Account on PND, debit not allowed on this account: 0011230485",
+                    "Something new happened for 0011230485"):
+            label, _ = classify(raw)
+            self.assertNotRegex(label, r"\d{6,}")
+
+    def test_real_messages_are_grouped(self):
+        self.assertEqual(classify("Insufficient Balance"), ("Insufficient funds", "customer"))
+        self.assertEqual(classify("Your maximum debit limit per transaction is : 50,000.00")[1], "customer")
+        self.assertEqual(classify("HTTP error occurred")[1], "system")
+        self.assertEqual(classify(None)[1], "unknown")
+
+    def test_pnd_failures_are_called_out(self):
+        reasons = [
+            {"reason": "Insufficient funds", "kind": "customer", "today": 20, "recent": 1},
+            {"reason": "Account restricted (PND)", "kind": "account", "today": 15, "recent": 1},
+        ]
+        self.assertIn("reasons-pnd", ids(run(health__reasons=reasons)))
+
+    def test_paused_rewards_are_explained(self):
+        result = run(rewards__today={"count": 0, "value": 0}, rewards__last_paid_at="2026-09-20T18:00:00")
+        item = next(i for i in result["items"] if i["id"] == "rewards-paused")
+        self.assertIn("20 Sep", item["detail"])
+
+    def test_signups_compare_with_typical_weekday(self):
+        item = next(i for i in run(funnel__signups={"today": 20, "yesterday": 20})["items"] if i["id"] == "signups")
+        self.assertIn("typical Friday", item["title"])

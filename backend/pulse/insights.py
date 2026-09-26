@@ -1,3 +1,9 @@
+from datetime import datetime
+
+from .reasons import HINTS as REASON_HINTS
+from .reasons import NOT_RECORDED
+
+
 PRODUCT_LABELS = {
     "INTER": "Transfers to other banks",
     "INTRA": "Transfers within Dash",
@@ -8,17 +14,6 @@ PRODUCT_LABELS = {
     "Cable TV": "Cable TV",
     "Transport and Toll Payment": "Transport & tolls",
 }
-
-REASON_HINTS = {
-    "Insufficient funds": "customer-side, not a system fault",
-    "Invalid beneficiary account": "customers entering wrong account numbers",
-    "Transfer limit exceeded": "customers hitting their limits; worth reviewing limit tiers",
-    "Beneficiary bank not available": "points to a destination bank or NIP outage",
-    "Timeout waiting for response from destination": "points to switch or provider latency",
-    "Do not honor": "destination banks are declining",
-}
-
-CUSTOMER_SIDE = {"Insufficient funds", "Invalid beneficiary account", "Transfer limit exceeded"}
 
 MIN_VOLUME = 20
 
@@ -142,13 +137,13 @@ def failures(p):
 
 
 def reasons(p, b):
-    failed = p["transactions"]["today"]["failed"]
     rows = p["health"]["reasons"]
-    if failed < 10 or not rows:
+    total = sum(r["today"] for r in rows)
+    if total < 10:
         return []
     out = []
     for r in rows:
-        share, base = r["today"] / failed, b["reasons"].get(r["reason"], 0)
+        share, base = r["today"] / total, b["reasons"].get(r["reason"], 0)
         if r["today"] >= 5 and base > 0 and share / base >= 1.6 and share - base >= 0.08:
             hint = REASON_HINTS.get(r["reason"], "worth investigating")
             out.append(insight(f"reason-{r['reason']}", "health", "warn", "zap",
@@ -156,15 +151,35 @@ def reasons(p, b):
                                f"{pct(share)} of today's failures vs {pct(base)} last week. This {hint}.",
                                55 + min((share - base) * 100, 30)))
 
-    customer = sum(r["today"] for r in rows if r["reason"] in CUSTOMER_SIDE) / failed
-    top = rows[0]
-    hint = REASON_HINTS.get(top["reason"], "")
-    if customer >= 0.6:
-        out.append(insight("reasons-mix", "health", "good", "user", f"{pct(customer)} of failures are customer-side",
-                           f"Mostly “{top['reason']}”. The platform itself is holding up.", 18))
-    elif customer <= 0.4:
-        out.append(insight("reasons-mix", "health", "warn", "server", f"{pct(1 - customer)} of failures are system-side",
-                           f"Led by “{top['reason']}”{', which ' + hint if hint else ''}.", 52))
+    by_kind = {}
+    for r in rows:
+        by_kind[r["kind"]] = by_kind.get(r["kind"], 0) + r["today"]
+    known = total - by_kind.get("unknown", 0)
+    if known >= 10:
+        system = by_kind.get("system", 0) / known
+        top_system = next((r for r in rows if r["kind"] == "system"), None)
+        if system >= 0.4 and top_system:
+            out.append(insight("reasons-mix", "health", "warn", "server", f"{pct(system)} of failures are system-side",
+                               f"Led by “{top_system['reason']}”, which {REASON_HINTS.get(top_system['reason'], 'needs a look')}.",
+                               52))
+        else:
+            top = next(r for r in rows if r["kind"] != "unknown")
+            out.append(insight("reasons-mix", "health", "good", "user",
+                               f"Only {pct(system)} of failures are system-side",
+                               f"Mostly “{top['reason']}”. The platform itself is holding up.", 18))
+
+    account = by_kind.get("account", 0) / total
+    if account >= 0.15:
+        out.append(insight("reasons-pnd", "health", "info", "lock", f"{pct(account)} of failures hit restricted (PND) accounts",
+                           f"{fmt(by_kind['account'])} attempts today from accounts on Post-No-Debit. "
+                           f"Usually KYC or compliance holds that ops can review.", 30))
+
+    missing = by_kind.get("unknown", 0) / total
+    if missing >= 0.1:
+        out.append(insight("reasons-missing", "health", "info", "help-circle",
+                           f"{pct(missing)} of failures have no reason recorded",
+                           f"“{NOT_RECORDED}” on {fmt(by_kind['unknown'])} failed transactions today. "
+                           f"A logging gap worth raising with the backend team.", 16))
     return out
 
 
@@ -212,13 +227,15 @@ def onboarding(p, b):
                            f"{pct(today)} low-score today vs {pct(base)} last week. This blocks sign-ups "
                            f"and password resets.", 50))
 
-    s = f["signups"]
-    if s["yesterday"] >= MIN_VOLUME:
-        diff = s["today"] / s["yesterday"] - 1
+    s, usual = f["signups"], b.get("signups")
+    weekday = b["typical"]["weekday"] if b.get("typical") else None
+    compare, label = (usual, f"a typical {weekday}") if usual and weekday else (s["yesterday"], "yesterday")
+    if compare and compare >= MIN_VOLUME:
+        diff = s["today"] / compare - 1
         if abs(diff) >= 0.25:
             out.append(insight("signups", "funnel", "good" if diff > 0 else "warn",
-                               "user-plus", f"Sign-ups {'up' if diff > 0 else 'down'} {pct(abs(diff))} on yesterday",
-                               f"{fmt(s['today'])} so far vs {fmt(s['yesterday'])} by this time yesterday",
+                               "user-plus", f"Sign-ups {'up' if diff > 0 else 'down'} {pct(abs(diff))} on {label}",
+                               f"{fmt(s['today'])} so far vs ~{fmt(compare)} by this time on {label}",
                                28 + min(abs(diff) * 40, 20)))
     return out
 
@@ -248,6 +265,17 @@ def geography(p):
 def rewards(p, b):
     tx = p["transactions"]["today"]["count"]
     r = p["rewards"]["today"]
+    last = p["rewards"].get("last_paid_at")
+    if r["count"] == 0:
+        if not last:
+            return []
+        last_at = datetime.fromisoformat(last)
+        days = (datetime.fromisoformat(p["generated_at"]).date() - last_at.date()).days
+        if days < 1:
+            return []
+        return [insight("rewards-paused", "flow", "info", "gift", "No reward payouts today",
+                        f"Last payout was {last_at.day} {last_at:%b} ({days} day{'s' if days != 1 else ''} ago). "
+                        f"The quest rewards programme looks paused.", 20)]
     base = b["rewards"]
     if tx < 50 or not base or not base["per_tx"]:
         return []

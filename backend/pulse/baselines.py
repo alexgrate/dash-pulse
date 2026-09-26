@@ -3,7 +3,9 @@ from statistics import median
 
 from django.core.cache import cache
 
-from .queries import LEGACY, LIVENESS, OUTCOME_SQL, PAYMENTS, REWARDS, WAT, fetch
+from .queries import LEGACY, LIVENESS, ONBOARDING, OUTCOME_SQL, PAYMENTS, REWARDS, WAT, fetch
+from .reasons import REASON_SQL
+from .reasons import group as group_reasons
 
 TYPICAL_WEEKS = 4
 COMPARE_DAYS = 7
@@ -66,14 +68,28 @@ def typical_day(now):
 
 def reason_shares(today):
     rows = fetch(f"""
-        SELECT CBA_MESSAGE AS reason, COUNT(*) AS n
+        SELECT {REASON_SQL} AS reason, COUNT(*) AS n
         FROM {LEGACY}
         WHERE CBA_RESPONSE_CODE = 'false'
           AND CREATED >= %(since)s AND CREATED < %(today)s
-        GROUP BY CBA_MESSAGE
+        GROUP BY reason
     """, {"since": today - timedelta(days=COMPARE_DAYS), "today": today})
-    total = sum(int(r["n"]) for r in rows) or 1
-    return {(r["reason"] or "Unknown"): int(r["n"]) / total for r in rows}
+    grouped = group_reasons(rows, ["n"])
+    total = sum(r["n"] for r in grouped) or 1
+    return {r["reason"]: r["n"] / total for r in grouped}
+
+
+def typical_signups(now):
+    today = now.replace(hour=0, minute=0, second=0)
+    rows = fetch(f"""
+        SELECT DATE(DATE_CREATED) AS d, SUM(TIME(DATE_CREATED) < %(t)s) AS so_far
+        FROM {ONBOARDING}
+        WHERE DATE_CREATED >= %(since)s AND DATE_CREATED < %(today)s
+          AND DAYOFWEEK(DATE_CREATED) = DAYOFWEEK(%(today)s)
+        GROUP BY d
+    """, {"since": today - timedelta(weeks=TYPICAL_WEEKS), "today": today, "t": now.time()})
+    values = [int(r["so_far"] or 0) for r in rows]
+    return median(values) if len(values) >= 2 else None
 
 
 def product_rates(today):
@@ -134,6 +150,7 @@ def build(now):
     quarter = f"{day}T{now.hour:02d}{now.minute // 15}"
     return {
         "typical": cached(f"pulse:typical:{quarter}", lambda: typical_day(now)),
+        "signups": cached(f"pulse:signups:{quarter}", lambda: typical_signups(now)),
         "reasons": cached(f"pulse:reasons:{day}", lambda: reason_shares(today)),
         "products": cached(f"pulse:products:{day}", lambda: product_rates(today)),
         "liveness": cached(f"pulse:liveness:{day}", lambda: liveness_rate(today)),

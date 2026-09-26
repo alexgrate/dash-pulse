@@ -14,6 +14,14 @@ const PRODUCT_LABELS = {
 
 const EASE = [0.16, 1, 0.3, 1]
 
+const REASON_KINDS = {
+  system: { color: 'var(--color-bad)', label: 'System' },
+  account: { color: 'var(--color-warn)', label: 'Account hold' },
+  customer: { color: 'var(--color-accent)', label: 'Customer' },
+  unknown: { color: 'var(--color-muted)', label: 'Not recorded' },
+  other: { color: 'var(--color-brand-soft)', label: 'Other' },
+}
+
 export default function HealthScene({ data }) {
   const { recent, baseline, reasons, products, liveness, alert, window_minutes: minutes } = data.health
   const rising =
@@ -69,7 +77,15 @@ export default function HealthScene({ data }) {
           {reasons.map((r, i) => (
             <div key={r.reason}>
               <div className="mb-2 flex items-end justify-between gap-4">
-                <span className="truncate text-[clamp(13px,1.05vw,22px)]">{r.reason}</span>
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate text-[clamp(13px,1.05vw,22px)]">{r.reason}</span>
+                  <span
+                    className="shrink-0 text-[clamp(9px,0.7vw,14px)] tracking-[0.15em] uppercase"
+                    style={{ color: (REASON_KINDS[r.kind] ?? REASON_KINDS.other).color }}
+                  >
+                    {(REASON_KINDS[r.kind] ?? REASON_KINDS.other).label}
+                  </span>
+                </span>
                 <span className="flex shrink-0 items-baseline gap-3">
                   {r.recent > 0 && (
                     <span className="rounded-full bg-bad/10 px-2 py-0.5 text-[clamp(10px,0.8vw,16px)] text-bad">
@@ -81,8 +97,11 @@ export default function HealthScene({ data }) {
               </div>
               <div className="h-[clamp(6px,0.7vh,10px)] overflow-hidden rounded-full bg-white/[0.05]">
                 <motion.div
-                  className="h-full rounded-full bg-bad"
-                  style={{ boxShadow: '0 0 14px var(--color-bad)' }}
+                  className="h-full rounded-full"
+                  style={{
+                    background: (REASON_KINDS[r.kind] ?? REASON_KINDS.other).color,
+                    boxShadow: `0 0 14px ${(REASON_KINDS[r.kind] ?? REASON_KINDS.other).color}`,
+                  }}
                   initial={{ width: 0 }}
                   animate={{ width: `${(r.today / top) * 100}%` }}
                   transition={{ duration: 1.3, delay: 0.3 + i * 0.1, ease: EASE }}

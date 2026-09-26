@@ -12,6 +12,8 @@ from zoneinfo import ZoneInfo
 from django.db import connections
 
 from .geo import CITY_COORDS, NIGERIA_BOUNDS, nearest_city
+from .reasons import REASON_SQL
+from .reasons import group as group_reasons
 
 LAGOS = ZoneInfo("Africa/Lagos")
 WAT = timedelta(hours=1)
@@ -211,7 +213,11 @@ def rewards(w_utc):
         GROUP BY bucket
     """, w_utc)
     count, value = by_bucket(rows), by_bucket(rows, "value", float)
-    return {b: {"count": count[b], "value": value[b]} for b in ("today", "yesterday")}
+    last = fetch(f"SELECT MAX(created_at) AS last FROM {REWARDS}", {})[0]["last"]
+    return {
+        **{b: {"count": count[b], "value": value[b]} for b in ("today", "yesterday")},
+        "last_paid_at": (last + WAT).isoformat() if last else None,
+    }
 
 
 def failure_rates(now):
@@ -251,20 +257,15 @@ def failure_rates(now):
 
 def failure_reasons(w, now):
     rows = fetch(f"""
-        SELECT CBA_MESSAGE AS reason,
+        SELECT {REASON_SQL} AS reason,
                COUNT(*) AS today,
                SUM(CREATED >= %(recent)s) AS recent
         FROM {LEGACY}
         WHERE CBA_RESPONSE_CODE = 'false'
           AND CREATED >= LEAST(%(today)s, %(recent)s) AND CREATED < %(now)s
-        GROUP BY CBA_MESSAGE
-        ORDER BY today DESC
-        LIMIT 6
+        GROUP BY reason
     """, {**w, "recent": now - timedelta(minutes=RECENT_MINUTES)})
-    return [
-        {"reason": r["reason"] or "Unknown", "today": int(r["today"]), "recent": int(r["recent"])}
-        for r in rows
-    ]
+    return sorted(group_reasons(rows, ["today", "recent"]), key=lambda r: -r["today"])[:6]
 
 
 def liveness(w):

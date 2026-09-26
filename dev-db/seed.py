@@ -75,9 +75,25 @@ OUTCOMES = {
 }
 CHAOS_INTER_FAIL = 0.45
 
-FAIL_REASONS = {"Insufficient funds": 45, "Beneficiary bank not available": 15,
-                "Transfer limit exceeded": 12, "Invalid beneficiary account": 10,
-                "Timeout waiting for response from destination": 10, "Do not honor": 8}
+FAIL_REASONS = {
+    "Insufficient funds ({acct})": 935,
+    "Account on PND, debit not allowed on this account: {acct}": 415,
+    None: 245,
+    "Daily CBA debit limit exceeded": 91,
+    "HTTP error occurred": 68,
+    "Request in progress": 59,
+    "INVALID VIRTUAL ACCOUNT": 10,
+    "Your maximum debit limit per transaction is : 50,000.00": 10,
+    "Beneficiary Transfer Limit Exceeded": 7,
+    "Invalid amount": 4,
+    "Beneficiary Institution not available": 2,
+    "Transaction Timed Out From Destination Institution": 1,
+}
+CHAOS_REASONS = {
+    "HTTP error occurred": 50,
+    "Transaction Timed Out From Destination Institution": 25,
+    "Beneficiary Institution not available": 25,
+}
 
 BANKS = {"OPay": 22, "Moniepoint MFB": 16, "PalmPay": 14, "GTBank": 9, "Access Bank": 8,
          "Kuda MFB": 6, "Zenith Bank": 6, "First Bank": 6, "UBA": 5, "Wema Bank": 3,
@@ -145,7 +161,7 @@ PER_TX = {"login": 4.35, "reset": 3.2, "notif": 2.1, "liveness": 0.19, "reward":
 TABLES = {
     "legacy": ("`dashmfb-mcs`.DashMFB_Transactions",
                "PAYMENT_REFERENCE, TRANSACTION_TYPE, AMOUNT, CREATED, UPDATED, CBA_RESPONSE_CODE, "
-               "CBA_MESSAGE, PROVIDER, ACCOUNT_NUMBER, BENEFICIARY_BANK_NAME, LOCATION_LAT, "
+               "CBA_MESSAGE, PROVIDER_RESPONSE_MESSAGE, PROVIDER, ACCOUNT_NUMBER, BENEFICIARY_BANK_NAME, LOCATION_LAT, "
                "LOCATION_LON, TENANT_ID"),
     "pt": ("`dashmfb-cba-mcs`.payment_transactions",
            "id, transfer_amount, beneficiary_bank_name, source_account, payment_reference, provider, "
@@ -188,7 +204,7 @@ class Pick:
 
 
 pick_mix_before, pick_mix_sept = Pick(MIX_BEFORE_SEPT), Pick(MIX_SEPT)
-pick_reason, pick_bank = Pick(FAIL_REASONS), Pick(BANKS)
+pick_reason, pick_chaos_reason, pick_bank = Pick(FAIL_REASONS), Pick(CHAOS_REASONS), Pick(BANKS)
 pick_city = Pick({i: c[4] for i, c in enumerate(CITIES)})
 pick_phase, pick_reward = Pick(PHASES), Pick(REWARDS)
 pick_purpose, pick_channel = Pick(LIVENESS_PURPOSE), Pick(NOTIF_CHANNELS)
@@ -338,10 +354,19 @@ class Seeder:
         is_bill = kind not in ("INTER", "INTRA")
         bank = pick_bank() if kind == "INTER" else ("Dash MFB" if kind == "INTRA" else None)
         cba_code = None if outcome in ("NULL_SUCCESS", "PENDING") else ("false" if outcome == "FAILED" else "true")
-        message = pick_reason() if outcome == "FAILED" else (None if cba_code is None else "Successful")
+        message, provider_message = None, None
+        if outcome == "FAILED":
+            template = pick_chaos_reason() if self.chaos and kind == "INTER" else pick_reason()
+            provider_message = template.format(acct=account_number(uid)) if template else None
+            if template and template.startswith("Account on PND") and random.random() < 0.33:
+                message = "Account on PND, debit not allowed on this account"
+            elif template and template.startswith("Insufficient") and random.random() < 0.11:
+                message = "Insufficient Balance"
+        elif cba_code is not None:
+            message = "Successful"
         updated = local if outcome == "PENDING" else local + timedelta(seconds=random.randint(2, 30))
 
-        self.w.add("legacy", (ref, kind, amount, local, updated, cba_code, message,
+        self.w.add("legacy", (ref, kind, amount, local, updated, cba_code, message, provider_message,
                               "BAXI" if is_bill else "NCUBE", account_number(uid), bank,
                               lat, lon, TENANT))
 

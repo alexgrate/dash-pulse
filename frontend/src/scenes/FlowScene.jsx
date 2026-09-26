@@ -12,6 +12,9 @@ const GROUP_STYLE = {
   Bills: { icon: Receipt, color: 'var(--color-good)' },
 }
 
+const lastPaid = (iso) =>
+  new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+
 export default function FlowScene({ data }) {
   const total = data.mix.reduce((sum, g) => sum + g.count, 0) || 1
 
@@ -66,7 +69,11 @@ export default function FlowScene({ data }) {
           label="Rewards paid out"
           value={data.rewards.today.count}
           yesterday={data.rewards.yesterday.count}
-          extra={`${naira(data.rewards.today.value)} paid today`}
+          extra={
+            data.rewards.today.count || !data.rewards.last_paid_at
+              ? `${naira(data.rewards.today.value)} paid today`
+              : `Last payout ${lastPaid(data.rewards.last_paid_at)}`
+          }
           delay={0.35}
         />
       </div>

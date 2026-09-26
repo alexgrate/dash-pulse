@@ -52,5 +52,13 @@ password, salt, BVN, NIN, *_IMAGE_PATH, names, phone, email, balances (without a
 - Baselines are cached for 15 minutes; the live numbers still refresh every 60 seconds.
 - Each rule returns an insight with severity (bad, warn, good, info), a plain-English title and detail, and a score. The top 10 by score are sent.
 - Scenes with a warn/bad insight stay on screen 8 seconds longer (ATTENTION_BONUS_SECONDS in frontend/src/scenes/index.js).
-- REASON_HINTS and CUSTOMER_SIDE in insights.py use the fake failure messages. Replace them with the real CBA_MESSAGE values from production.
 - Tests: `python manage.py test pulse`
+
+## Failure reasons (pulse/reasons.py)
+- Real reasons live in PROVIDER_RESPONSE_MESSAGE; CBA_MESSAGE is empty ~87% of the time. We read provider first, then CBA.
+- Raw messages embed customer account numbers (e.g. "Insufficient funds (0011058788)"). classify() maps them to fixed labels and strips any 6+ digit run, so account numbers never reach the API or the screen. A test enforces this.
+- Categories: customer, account (PND holds), system, unknown (no message saved), other (unmatched text). Add new patterns to RULES when new messages appear.
+- Real mix over 7 days (26 Sep 2026): 57% customer, 22% PND, 13% not recorded, 8% system.
+
+## Rewards
+- Real data had no quest_reward_transactions in the 3 days to 26 Sep 2026; the programme looks paused. The dashboard shows the last payout time instead of a bare zero.

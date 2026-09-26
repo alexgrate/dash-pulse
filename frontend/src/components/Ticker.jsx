@@ -16,7 +16,9 @@ export default function Ticker({ data }) {
     `${num(t.failed)} failed · ${num(t.reversed)} reversed`,
     `${num(data.active_users.today)} active users`,
     `${num(data.new_accounts.today)} new accounts`,
-    `${num(data.rewards.today.count)} rewards paid · ${naira(data.rewards.today.value)}`,
+    data.rewards.today.count
+      ? `${num(data.rewards.today.count)} rewards paid · ${naira(data.rewards.today.value)}`
+      : 'No reward payouts today',
   ]
 
   return (
