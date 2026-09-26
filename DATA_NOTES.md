@@ -62,3 +62,7 @@ password, salt, BVN, NIN, *_IMAGE_PATH, names, phone, email, balances (without a
 
 ## Rewards
 - Real data had no quest_reward_transactions in the 3 days to 26 Sep 2026; the programme looks paused. The dashboard shows the last payout time instead of a bare zero.
+
+## Clock
+- "Now" comes from the database (SELECT UTC_TIMESTAMP() + 1h), not the machine running Django. The dashboard server's Windows clock was found 1 hour ahead on 26 Sep 2026, which made the current hour look empty and flagged false "quiet hour" insights.
+- The API returns server_time (DB-corrected); the frontend clock applies the difference, so the on-screen time is right even if the machine clock is wrong.

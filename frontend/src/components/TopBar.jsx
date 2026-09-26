@@ -5,8 +5,8 @@ import { InsightIcon, TONES } from '../lib/insights'
 
 const TZ = 'Africa/Lagos'
 
-export default function TopBar({ offline, alert = false, insight = null }) {
-  const now = useClock()
+export default function TopBar({ offline, alert = false, insight = null, clockOffset = 0 }) {
+  const now = new Date(useClock().getTime() + clockOffset)
   const time = now.toLocaleTimeString('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', second: '2-digit' })
   const date = now.toLocaleDateString('en-GB', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' })
 

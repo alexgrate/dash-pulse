@@ -5,6 +5,7 @@ const POLL_MS = 20_000
 export function usePulse() {
   const [data, setData] = useState(null)
   const [offline, setOffline] = useState(false)
+  const [clockOffset, setClockOffset] = useState(0)
 
   useEffect(() => {
     let alive = true
@@ -17,6 +18,7 @@ export function usePulse() {
         if (alive) {
           setData(json)
           setOffline(false)
+          if (json.server_time) setClockOffset(Date.parse(`${json.server_time}+01:00`) - Date.now())
         }
       } catch {
         if (alive) setOffline(true)
@@ -31,5 +33,5 @@ export function usePulse() {
     }
   }, [])
 
-  return { data, offline: offline || Boolean(data?.stale) }
+  return { data, offline: offline || Boolean(data?.stale), clockOffset }
 }

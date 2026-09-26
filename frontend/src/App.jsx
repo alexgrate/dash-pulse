@@ -9,7 +9,7 @@ import { needsAttention, topFor } from './lib/insights'
 import { alertScene, ATTENTION_BONUS_SECONDS, scenes } from './scenes'
 
 export default function App() {
-  const { data, offline } = usePulse()
+  const { data, offline, clockOffset } = usePulse()
   const [sceneId, setSceneId] = useState(null)
   const alert = Boolean(data?.health?.alert)
 
@@ -23,7 +23,7 @@ export default function App() {
   return (
     <main className="relative isolate flex h-dvh flex-col overflow-hidden">
       <Backdrop alert={alert} />
-      <TopBar offline={offline} alert={alert} insight={data ? topFor(data, sceneId) : null} />
+      <TopBar offline={offline} alert={alert} insight={data ? topFor(data, sceneId) : null} clockOffset={clockOffset} />
       {data ? (
         <>
           <SceneDeck scenes={playlist} data={data} interrupt={alert} onSceneChange={setSceneId} />

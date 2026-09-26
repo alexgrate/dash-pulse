@@ -1,11 +1,12 @@
 import logging
+from datetime import timedelta
 
 from django.core.cache import cache
 from django.db import DatabaseError
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
-from . import snapshot
+from . import queries, snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -25,4 +26,5 @@ def pulse(request):
             if data is None:
                 return JsonResponse({"error": "unavailable"}, status=503)
             data = {**data, "stale": True}
-    return JsonResponse(data)
+    offset = timedelta(seconds=data.get("clock_offset_seconds", 0))
+    return JsonResponse({**data, "server_time": (queries.machine_lagos_now() + offset).isoformat()})

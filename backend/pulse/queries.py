@@ -95,8 +95,15 @@ GROUPS = {
 }  
 
 
-def lagos_now():
+def machine_lagos_now():
     return datetime.now(LAGOS).replace(tzinfo=None, microsecond=0)
+
+
+def lagos_now():
+    with connections["bank"].cursor() as cur:
+        cur.execute("SELECT UTC_TIMESTAMP()")
+        utc = cur.fetchone()[0]
+    return (utc + WAT).replace(microsecond=0)
 
 
 def windows(now):
