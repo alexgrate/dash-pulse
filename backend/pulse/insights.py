@@ -155,7 +155,8 @@ def reasons(p, b):
         if r["today"] >= 5 and base > 0 and share / base >= 1.6 and share - base >= 0.08:
             hint = REASON_HINTS.get(r["reason"], DEFAULT_HINT)
             out.append(insight(f"reason-{r['reason']}", "health", "warn", "zap",
-                               f"“{r['reason']}” is {share / base:.1f}× its usual share of failures",
+                               (f"“{r['reason']}” is {share / base:.1f}× its usual share of failures" if share / base < 10
+                                else f"“{r['reason']}” failures are far above normal"),
                                f"{pct(share)} of today's failures vs {pct(base)} last week. {hint}",
                                55 + min((share - base) * 100, 30)))
 
@@ -358,8 +359,16 @@ def bank_health(p, b):
 RULES = 10
 
 
+def annotate_products(p, b):
+    for prod in p["health"]["products"]:
+        usual = (b.get("products") or {}).get(prod["kind"]) or {}
+        prod["usual_failure_rate"] = usual.get("failure_rate")
+        prod["usual_reversal_rate"] = usual.get("reversal_rate")
+
+
 def build(p, b):
     flag_banks(p, b)
+    annotate_products(p, b)
     typical = b["typical"]
     fc = forecast(p, typical)
     items = [

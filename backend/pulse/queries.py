@@ -311,6 +311,7 @@ def health(w, now, products):
     rates = failure_rates(now)
     return {
         "window_minutes": RECENT_MINUTES,
+        "min_settled": ALERT_MIN_SETTLED,
         "recent": rates["recent"],
         "baseline": rates["baseline"],
         "alert": alert_for(rates),
