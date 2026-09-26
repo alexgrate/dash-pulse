@@ -79,13 +79,13 @@ def reason_shares(today):
     return {r["reason"]: r["n"] / total for r in grouped}
 
 
-def typical_signups(now):
+def typical_onboarding(now, column):
     today = now.replace(hour=0, minute=0, second=0)
     rows = fetch(f"""
-        SELECT DATE(DATE_CREATED) AS d, SUM(TIME(DATE_CREATED) < %(t)s) AS so_far
+        SELECT DATE({column}) AS d, SUM(TIME({column}) < %(t)s) AS so_far
         FROM {ONBOARDING}
-        WHERE DATE_CREATED >= %(since)s AND DATE_CREATED < %(today)s
-          AND DAYOFWEEK(DATE_CREATED) = DAYOFWEEK(%(today)s)
+        WHERE {column} >= %(since)s AND {column} < %(today)s
+          AND DAYOFWEEK({column}) = DAYOFWEEK(%(today)s)
         GROUP BY d
     """, {"since": today - timedelta(weeks=TYPICAL_WEEKS), "today": today, "t": now.time()})
     values = [int(r["so_far"] or 0) for r in rows]
@@ -150,7 +150,8 @@ def build(now):
     quarter = f"{day}T{now.hour:02d}{now.minute // 15}"
     return {
         "typical": cached(f"pulse:typical:{quarter}", lambda: typical_day(now)),
-        "signups": cached(f"pulse:signups:{quarter}", lambda: typical_signups(now)),
+        "signups": cached(f"pulse:signups:{quarter}", lambda: typical_onboarding(now, "DATE_CREATED")),
+        "accounts": cached(f"pulse:accounts:{quarter}", lambda: typical_onboarding(now, "ACCOUNT_OPENED_DATE")),
         "reasons": cached(f"pulse:reasons:{day}", lambda: reason_shares(today)),
         "products": cached(f"pulse:products:{day}", lambda: product_rates(today)),
         "liveness": cached(f"pulse:liveness:{day}", lambda: liveness_rate(today)),

@@ -4,6 +4,7 @@ import AnimatedNumber from '../components/AnimatedNumber'
 import Delta from '../components/Delta'
 import { Eyebrow, Panel } from '../components/ui'
 import { naira, num } from '../lib/format'
+import { versus } from '../lib/insights'
 
 const GROUP_STYLE = {
   Transfers: { icon: ArrowLeftRight, color: 'var(--color-accent)' },
@@ -61,7 +62,7 @@ export default function FlowScene({ data }) {
           icon={UserPlus}
           label="New accounts opened"
           value={data.new_accounts.today}
-          yesterday={data.new_accounts.yesterday}
+          {...versus(data, 'accounts_so_far', data.new_accounts.yesterday)}
           delay={0.2}
         />
         <BigCard
@@ -81,7 +82,7 @@ export default function FlowScene({ data }) {
   )
 }
 
-function BigCard({ icon: Icon, label, value, yesterday, extra, delay }) {
+function BigCard({ icon: Icon, label, value, yesterday, compareLabel, extra, delay }) {
   return (
     <Panel className="flex flex-1 flex-col justify-center" delay={delay}>
       <div className="flex items-center gap-3">
@@ -94,7 +95,7 @@ function BigCard({ icon: Icon, label, value, yesterday, extra, delay }) {
         className="mt-3 block text-[clamp(48px,6vw,130px)] leading-none font-semibold tracking-[-0.04em]"
       />
       <div className="mt-4 flex flex-wrap items-center gap-4">
-        <Delta today={value} yesterday={yesterday} />
+        <Delta today={value} yesterday={yesterday} label={compareLabel} />
         {extra && <span className="text-[clamp(12px,0.95vw,20px)] text-muted">{extra}</span>}
       </div>
     </Panel>

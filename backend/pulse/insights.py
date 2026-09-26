@@ -309,7 +309,11 @@ def build(p, b):
     items.sort(key=lambda i: -i["score"])
     return {
         "forecast": fc,
-        "typical": {k: typical[k] for k in ("weekday", "days", "hourly_median", "hourly_low", "hourly_high", "so_far_median")}
+        "typical": {
+            **{k: typical[k] for k in ("weekday", "days", "hourly_median", "hourly_low", "hourly_high", "so_far_median")},
+            "signups_so_far": b.get("signups"),
+            "accounts_so_far": b.get("accounts"),
+        }
         if typical
         else None,
         "signals": RULES,

@@ -60,3 +60,10 @@ export const topFor = (data, sceneId) => itemsOf(data).find((i) => i.scene === s
 
 export const needsAttention = (data, sceneId) =>
   itemsOf(data).some((i) => i.scene === sceneId && (i.severity === 'warn' || i.severity === 'bad'))
+
+export const versus = (data, key, yesterday) => {
+  const typical = data.intelligence?.typical
+  return typical?.[key]
+    ? { yesterday: typical[key], compareLabel: `vs a typical ${typical.weekday}` }
+    : { yesterday, compareLabel: 'vs this time yesterday' }
+}

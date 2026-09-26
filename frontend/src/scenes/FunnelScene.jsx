@@ -4,6 +4,7 @@ import AnimatedNumber from '../components/AnimatedNumber'
 import Delta from '../components/Delta'
 import { Eyebrow, Panel } from '../components/ui'
 import { num, pct } from '../lib/format'
+import { versus } from '../lib/insights'
 
 const EASE = [0.16, 1, 0.3, 1]
 
@@ -26,7 +27,11 @@ export default function FunnelScene({ data }) {
     <div className="grid h-full grid-cols-12 grid-rows-[auto_1fr] gap-[2vw]">
       <Kpi className="col-span-4" icon={UserPlus} label="Sign-ups today" delay={0}>
         <AnimatedNumber value={f.signups.today} />
-        <Delta today={f.signups.today} yesterday={f.signups.yesterday} />
+        <Delta
+          today={f.signups.today}
+          yesterday={versus(data, 'signups_so_far', f.signups.yesterday).yesterday}
+          label={versus(data, 'signups_so_far', f.signups.yesterday).compareLabel}
+        />
       </Kpi>
       <Kpi className="col-span-4" icon={Percent} label={`Sign-up to account · ${f.days} days`} delay={0.1}>
         <AnimatedNumber value={f.conversion} format={(v) => (f.stages[0]?.count ? pct(v) : '—')} />
