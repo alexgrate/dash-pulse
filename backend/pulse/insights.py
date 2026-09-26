@@ -8,9 +8,9 @@ from .reasons import NOT_RECORDED
 PRODUCT_LABELS = {
     "INTER": "Transfers to other banks",
     "INTRA": "Transfers within Dash",
-    "Airtime": "Airtime",
-    "Data Bundle": "Data",
-    "Betting & Lottery": "Betting",
+    "Airtime": "Airtime purchases",
+    "Data Bundle": "Data purchases",
+    "Betting & Lottery": "Betting top-ups",
     "Utilities": "Electricity & utilities",
     "Cable TV": "Cable TV",
     "Transport and Toll Payment": "Transport & tolls",
@@ -206,7 +206,7 @@ def products(p, b):
     if chronic:
         label, base = chronic
         out.append(insight("chronic-reversals", "health", "info", "rotate-ccw",
-                           f"{label} is reversed {pct(base['reversal_rate'])} of the time",
+                           f"{pct(base['reversal_rate'])} of {label[0].lower() + label[1:]} get reversed",
                            "Consistently, across the last 7 days. A vendor issue worth raising.", 22))
     return out
 
@@ -235,7 +235,7 @@ def onboarding(p, b):
         diff = s["today"] / compare - 1
         if abs(diff) >= 0.25:
             out.append(insight("signups", "funnel", "good" if diff > 0 else "warn",
-                               "user-plus", f"Sign-ups {'up' if diff > 0 else 'down'} {pct(abs(diff))} on {label}",
+                               "user-plus", f"Sign-ups {'up' if diff > 0 else 'down'} {pct(abs(diff))} vs {label}",
                                f"{fmt(s['today'])} so far vs ~{fmt(compare)} by this time on {label}",
                                28 + min(abs(diff) * 40, 20)))
     return out
