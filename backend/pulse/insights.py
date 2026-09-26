@@ -18,6 +18,9 @@ PRODUCT_LABELS = {
 
 MIN_VOLUME = 20
 MAP_MIN_CITIES = 3
+BANK_MIN_RECENT = 10
+BANK_FAILING_RATE = 0.35
+BANK_FAILING_GAP = 0.2
 
 
 def pct(x, digits=0):
@@ -291,6 +294,24 @@ def rewards(p, b):
                     f"{per_tx:.2f} payouts per transaction, about {naira(r['value'] / tx)} each", 12)]
 
 
+def flag_banks(p, b):
+    data, base = p.get("banks"), b.get("banks") or {}
+    if not data:
+        return
+    for bank in data.get("all", data["items"]):
+        r = bank["recent"]
+        usual = (base.get(bank["key"]) or {}).get("failure_rate")
+        bank["usual_rate"] = usual
+        bank["failing_now"] = bool(
+            r["settled"] >= BANK_MIN_RECENT
+            and r["failure_rate"] is not None
+            and r.get("others_rate") is not None
+            and r["failure_rate"] >= BANK_FAILING_RATE
+            and r["failure_rate"] - r["others_rate"] >= BANK_FAILING_GAP
+            and (usual is None or r["failure_rate"] - usual >= BANK_FAILING_GAP)
+        )
+
+
 def bank_health(p, b):
     data, base = p.get("banks"), b.get("banks") or {}
     if not data or not data["items"]:
@@ -339,6 +360,7 @@ RULES = 10
 
 
 def build(p, b):
+    flag_banks(p, b)
     typical = b["typical"]
     fc = forecast(p, typical)
     items = [

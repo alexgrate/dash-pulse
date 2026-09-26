@@ -36,9 +36,6 @@ FUNNEL_DAYS = 30
 MAP_RECENT_MINUTES = 10
 MAP_GRID_DEGREES = 0.1
 BANK_RECENT_MINUTES = 30
-BANK_MIN_RECENT = 8
-BANK_FAILING_RATE = 0.35
-BANK_FAILING_GAP = 0.2
 
 PHASE_ORDER = [
     "EMAIL_VERIFICATION",
@@ -483,12 +480,7 @@ def banks(w):
         others = others_failed / others_settled if others_settled else None
         r = b["recent"]
         r["others_rate"] = round(others, 4) if others is not None else None
-        b["failing_now"] = bool(
-            r["settled"] >= BANK_MIN_RECENT
-            and others is not None
-            and r["failure_rate"] >= BANK_FAILING_RATE
-            and r["failure_rate"] - others >= BANK_FAILING_GAP
-        )
+        b["failing_now"] = False
     count = sum(b["count"] for b in items)
     failed = sum(b["failed"] for b in items)
     settled = sum(b["settled"] for b in items)
