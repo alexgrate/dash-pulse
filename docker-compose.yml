@@ -1,0 +1,15 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: pulse-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: localroot
+      TZ: UTC
+    ports:
+      - "3307:3306"
+    volumes:
+      - pulse-mysql-data:/var/lib/mysql
+      - ./dev-db/init:/docker-entrypoint-initdb.d
+
+volumes:
+  pulse-mysql-data:
