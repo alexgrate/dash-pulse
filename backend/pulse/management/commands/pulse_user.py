@@ -7,10 +7,10 @@ from django.core.management.base import BaseCommand, CommandError
 
 
 class Command(BaseCommand):
-    help = "Manage Dash Pulse logins: add, password, disable, enable, list"
+    help = "Manage Dash Pulse logins: add, password, disable, enable, make-admin, remove-admin, list"
 
     def add_arguments(self, parser):
-        parser.add_argument("action", choices=["add", "password", "disable", "enable", "list"])
+        parser.add_argument("action", choices=["add", "password", "disable", "enable", "make-admin", "remove-admin", "list"])
         parser.add_argument("username", nargs="?")
 
     def handle(self, *args, action, username=None, **options):
@@ -18,8 +18,9 @@ class Command(BaseCommand):
         if action == "list":
             for user in users.objects.order_by("username"):
                 state = "active" if user.is_active else "disabled"
+                role = "admin" if user.is_staff else "viewer"
                 last = user.last_login.strftime("%Y-%m-%d %H:%M") if user.last_login else "never"
-                self.stdout.write(f"{user.username:<24} {state:<9} last login: {last}")
+                self.stdout.write(f"{user.username:<24} {role:<7} {state:<9} last login: {last}")
             return
 
         if not username:
@@ -38,6 +39,13 @@ class Command(BaseCommand):
             user = users.objects.get(username__iexact=username)
         except users.DoesNotExist:
             raise CommandError(f"No user '{username}'.")
+
+        if action in ("make-admin", "remove-admin"):
+            grant = action == "make-admin"
+            user.is_staff = user.is_superuser = grant
+            user.save()
+            self.stdout.write(self.style.SUCCESS(f"'{user.username}' is {'now an admin' if grant else 'no longer an admin'}."))
+            return
 
         if action == "password":
             user.set_password(self.ask_password(user))

@@ -42,7 +42,11 @@ def record_failure(ip, username):
 def session_payload(request):
     user = request.user
     signed_in = user.is_authenticated
-    return {"authenticated": signed_in, "username": user.get_username() if signed_in else None}
+    return {
+        "authenticated": signed_in,
+        "username": user.get_username() if signed_in else None,
+        "is_admin": bool(signed_in and user.is_staff),
+    }
 
 
 def login_required_json(view):
@@ -98,4 +102,4 @@ def sign_out(request):
     if request.user.is_authenticated:
         logger.info("Logout: user=%s ip=%s", request.user.get_username(), client_ip(request))
     logout(request)
-    return JsonResponse({"authenticated": False, "username": None})
+    return JsonResponse({"authenticated": False, "username": None, "is_admin": False})

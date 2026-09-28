@@ -278,3 +278,20 @@ class LoginTests(TestCase):
         r = strict.post("/api/auth/login", json.dumps({"username": "ops", "password": self.password}),
                         content_type="application/json", HTTP_X_CSRFTOKEN=token)
         self.assertEqual(r.status_code, 200)
+
+    def test_manage_page_is_admin_only(self):
+        r = self.client.get("/manage/auth/user/", follow=True)
+        self.assertEqual(r.redirect_chain[-1][0], "/")
+        self.post(self.client, "/api/auth/login", {"username": "ops", "password": self.password})
+        self.assertNotEqual(self.client.get("/manage/auth/user/").status_code, 200)
+        user = get_user_model().objects.get(username="ops")
+        user.is_staff = user.is_superuser = True
+        user.save()
+        self.post(self.client, "/api/auth/login", {"username": "ops", "password": self.password})
+        self.assertEqual(self.client.get("/manage/auth/user/").status_code, 200)
+        self.assertTrue(self.client.get("/api/auth/session").json()["is_admin"])
+
+    def test_admin_login_form_is_disabled(self):
+        r = self.client.post("/manage/login/", {"username": "ops", "password": self.password})
+        self.assertEqual(r.status_code, 302)
+        self.assertFalse(self.client.get("/api/auth/session").json()["authenticated"])

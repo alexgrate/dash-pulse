@@ -35,6 +35,7 @@ export default function App() {
         insight={data ? topFor(data, sceneId) : null}
         clockOffset={clockOffset}
         username={signedIn ? session.username : null}
+        isAdmin={signedIn && session.isAdmin}
         onSignOut={session.signOut}
       />
       {session.status === 'out' ? (

@@ -83,3 +83,5 @@ password, salt, BVN, NIN, *_IMAGE_PATH, names, phone, email, balances (without a
 - Passwords: minimum 12 characters, common passwords rejected.
 - Every login, failure, lockout and logout is logged (logger pulse.auth) with username and IP.
 - Set PULSE_HTTPS=1 when served over HTTPS so cookies are marked Secure.
+- User admin page at /manage/ (Django admin, Users only). Only accounts marked admin (`pulse_user make-admin <name>`) can open it; its own login form is disabled, so admins sign in through the dashboard login (with lockout and audit log) and are then let in. Admins see a "Manage users" link next to Sign out.
+- Deploy step: `python manage.py collectstatic --noinput` so the admin page's styling is served.

@@ -1,4 +1,4 @@
-import { Activity, LogOut, Siren, WifiOff } from 'lucide-react'
+import { Activity, LogOut, Siren, Users, WifiOff } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useClock } from '../hooks/useClock'
 import { InsightIcon, TONES } from '../lib/insights'
@@ -11,6 +11,7 @@ export default function TopBar({
   insight = null,
   clockOffset = 0,
   username = null,
+  isAdmin = false,
   onSignOut,
 }) {
   const now = new Date(useClock().getTime() + clockOffset)
@@ -56,13 +57,23 @@ export default function TopBar({
           <div className="tabular font-mono text-[clamp(18px,1.6vw,34px)]">{time}</div>
           <div className="text-[clamp(11px,0.8vw,16px)] text-muted">{date}</div>
           {username && (
-            <button
-              type="button"
-              onClick={onSignOut}
-              className="sign-out mt-1 inline-flex items-center gap-1.5 text-[clamp(10px,0.7vw,14px)] text-muted/70 transition hover:text-slate-200"
-            >
-              {username} · Sign out <LogOut className="size-[1em]" />
-            </button>
+            <div className="sign-out mt-1 flex items-center justify-end gap-3 text-[clamp(10px,0.7vw,14px)] text-muted/70">
+              {isAdmin && (
+                <a
+                  href="/manage/auth/user/"
+                  className="inline-flex items-center gap-1.5 transition hover:text-slate-200"
+                >
+                  <Users className="size-[1em]" /> Manage users
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="inline-flex items-center gap-1.5 transition hover:text-slate-200"
+              >
+                {username} · Sign out <LogOut className="size-[1em]" />
+              </button>
+            </div>
           )}
         </div>
       </div>
