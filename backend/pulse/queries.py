@@ -344,10 +344,23 @@ def funnel(w, now):
         current["lost"] = current["count"] - following["count"]
     stages[-1]["lost"] = 0
 
+    today_phases = {
+        r["phase"]: int(r["n"])
+        for r in fetch(f"""
+            SELECT ONBOARDING_PHASE AS phase, COUNT(*) AS n
+            FROM {ONBOARDING}
+            WHERE DATE_CREATED >= %(today)s AND DATE_CREATED < %(now)s
+            GROUP BY ONBOARDING_PHASE
+        """, w)
+    }
     stuck = sorted(
-        ({"phase": p, "label": PHASE_LABELS[p], "count": n} for p, n in phases.items() if p in PHASE_LABELS),
-        key=lambda s: -s["count"],
-    )[:5]
+        (
+            {"phase": p, "label": label, "count": phases.get(p, 0), "today": today_phases.get(p, 0)}
+            for p, label in PHASE_LABELS.items()
+            if phases.get(p) or today_phases.get(p)
+        ),
+        key=lambda s: (-s["count"], -s["today"]),
+    )
 
     minutes = [
         int(r["m"])
