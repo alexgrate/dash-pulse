@@ -82,7 +82,10 @@ export default function FunnelScene({ data }) {
           {f.stuck.map((s, i) => (
             <div key={s.phase}>
               <div className="mb-2 flex items-end justify-between gap-4">
-                <span className="truncate text-[clamp(12px,1vw,21px)]">{s.label}</span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[clamp(12px,1vw,21px)]">{s.label}</span>
+                  <span className="block truncate font-mono text-[clamp(9px,0.65vw,13px)] text-muted">{s.phase}</span>
+                </span>
                 <span className="tabular text-[clamp(15px,1.4vw,30px)] font-semibold">{num(s.count)}</span>
               </div>
               <div className="h-[clamp(5px,0.6vh,9px)] overflow-hidden rounded-full bg-white/[0.05]">
