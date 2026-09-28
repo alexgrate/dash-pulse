@@ -387,6 +387,9 @@ def funnel(w, now):
         "stuck": stuck,
         "median_minutes_to_account": minutes[len(minutes) // 2] if minutes else None,
         "signups": signups,
+        "accounts_all_time": int(fetch(f"""
+            SELECT COUNT(*) AS n FROM {ONBOARDING} WHERE ONBOARDING_PHASE = 'ACCOUNT_CREATED'
+        """, {})[0]["n"]),
     }
 
 

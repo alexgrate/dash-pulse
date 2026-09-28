@@ -48,7 +48,25 @@ export default function FunnelScene({ data }) {
         </div>
 
         <Panel className="flex min-h-0 flex-1 flex-col" delay={0.25}>
-          <Eyebrow>Onboarding funnel · last {f.days} days</Eyebrow>
+          <div className="flex items-start justify-between gap-4">
+            <Eyebrow>Onboarding funnel · last {f.days} days</Eyebrow>
+            {f.accounts_all_time != null && (
+              <div className="text-right">
+                <div className="text-[clamp(9px,0.7vw,14px)] tracking-[0.18em] text-muted uppercase">
+                  Total accounts · all time
+                </div>
+                <div className="mt-1 flex items-baseline justify-end gap-2">
+                  <AnimatedNumber
+                    value={f.accounts_all_time}
+                    className="text-[clamp(18px,1.6vw,34px)] font-semibold text-slate-100"
+                  />
+                  <span className="text-[clamp(11px,0.85vw,17px)] text-good">
+                    +{num(data.new_accounts.today)} today
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
           <div className="mt-[3vh] grid min-h-0 flex-1 grid-cols-6 gap-[1vw]">
             {f.stages.map((s, i) => (
               <div key={s.key} className="flex min-h-0 flex-col">
