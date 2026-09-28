@@ -1,6 +1,10 @@
+import json
 from copy import deepcopy
+from unittest.mock import patch
 
-from django.test import SimpleTestCase
+from django.contrib.auth import get_user_model
+from django.core.cache import cache
+from django.test import Client, SimpleTestCase, TestCase
 
 from . import insights
 from .reasons import classify
@@ -224,3 +228,53 @@ class InsightTests(SimpleTestCase):
         for raw, expected in cases.items():
             self.assertEqual(canonical(raw), expected)
         self.assertEqual(key("GTBANK PLC"), key("Guaranty Trust Bank"))
+
+
+class LoginTests(TestCase):
+    password = "correct-horse-battery-staple"
+
+    def setUp(self):
+        cache.clear()
+        get_user_model().objects.create_user("ops", password=self.password)
+
+    def post(self, client, url, body):
+        return client.post(url, json.dumps(body), content_type="application/json")
+
+    def test_dashboard_data_needs_login(self):
+        self.assertEqual(self.client.get("/api/pulse").status_code, 401)
+
+    def test_wrong_password_is_rejected_generically(self):
+        r = self.post(self.client, "/api/auth/login", {"username": "ops", "password": "nope"})
+        self.assertEqual(r.status_code, 401)
+        r2 = self.post(self.client, "/api/auth/login", {"username": "nobody", "password": "nope"})
+        self.assertEqual(r.json()["error"], r2.json()["error"])
+
+    def test_lockout_after_repeated_failures(self):
+        for _ in range(5):
+            self.post(self.client, "/api/auth/login", {"username": "ops", "password": "nope"})
+        r = self.post(self.client, "/api/auth/login", {"username": "ops", "password": self.password})
+        self.assertEqual(r.status_code, 429)
+
+    def test_login_then_data_then_logout(self):
+        fake = {"clock_offset_seconds": 0}
+        with patch("pulse.views.snapshot.build", return_value=fake):
+            r = self.post(self.client, "/api/auth/login", {"username": "ops", "password": self.password})
+            self.assertEqual(r.status_code, 200)
+            self.assertTrue(r.json()["authenticated"])
+            self.assertEqual(self.client.get("/api/pulse").status_code, 200)
+            self.post(self.client, "/api/auth/logout", {})
+            self.assertEqual(self.client.get("/api/pulse").status_code, 401)
+
+    def test_remember_keeps_session_longer(self):
+        self.post(self.client, "/api/auth/login", {"username": "ops", "password": self.password, "remember": True})
+        self.assertGreater(self.client.session.get_expiry_age(), 7 * 24 * 3600)
+
+    def test_login_requires_csrf_token(self):
+        strict = Client(enforce_csrf_checks=True)
+        r = self.post(strict, "/api/auth/login", {"username": "ops", "password": self.password})
+        self.assertEqual(r.status_code, 403)
+        strict.get("/api/auth/session")
+        token = strict.cookies["csrftoken"].value
+        r = strict.post("/api/auth/login", json.dumps({"username": "ops", "password": self.password}),
+                        content_type="application/json", HTTP_X_CSRFTOKEN=token)
+        self.assertEqual(r.status_code, 200)

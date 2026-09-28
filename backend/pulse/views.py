@@ -7,12 +7,14 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
 from . import queries, snapshot
+from .auth import login_required_json
 
 logger = logging.getLogger(__name__)
 
 CACHE_SECONDS = 60
 
 @require_GET
+@login_required_json
 def pulse(request):
     data = cache.get("pulse")
     if data is None:

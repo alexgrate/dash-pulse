@@ -1,11 +1,18 @@
-import { Activity, Siren, WifiOff } from 'lucide-react'
+import { Activity, LogOut, Siren, WifiOff } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useClock } from '../hooks/useClock'
 import { InsightIcon, TONES } from '../lib/insights'
 
 const TZ = 'Africa/Lagos'
 
-export default function TopBar({ offline, alert = false, insight = null, clockOffset = 0 }) {
+export default function TopBar({
+  offline,
+  alert = false,
+  insight = null,
+  clockOffset = 0,
+  username = null,
+  onSignOut,
+}) {
   const now = new Date(useClock().getTime() + clockOffset)
   const time = now.toLocaleTimeString('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', second: '2-digit' })
   const date = now.toLocaleDateString('en-GB', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' })
@@ -48,6 +55,15 @@ export default function TopBar({ offline, alert = false, insight = null, clockOf
         <div className="text-right">
           <div className="tabular font-mono text-[clamp(18px,1.6vw,34px)]">{time}</div>
           <div className="text-[clamp(11px,0.8vw,16px)] text-muted">{date}</div>
+          {username && (
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="sign-out mt-1 inline-flex items-center gap-1.5 text-[clamp(10px,0.7vw,14px)] text-muted/70 transition hover:text-slate-200"
+            >
+              {username} · Sign out <LogOut className="size-[1em]" />
+            </button>
+          )}
         </div>
       </div>
     </header>

@@ -39,7 +39,15 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+}
+
+body.cursor-idle,
+body.cursor-idle * {
   cursor: none;
+}
+
+body.cursor-idle .sign-out {
+  opacity: 0;
 }
 
 .tabular {

@@ -74,3 +74,12 @@ password, salt, BVN, NIN, *_IMAGE_PATH, names, phone, email, balances (without a
 - "Failing now": last 30 min, at least 10 settled transfers, 25%+ bank-side failures, 20+ points above other banks and above the bank's own 7-day usual. "Today" fallback: at least 30 settled, 15%+ bank-side, 12+ points above other banks and its usual. Constants: BANK_* in insights.py.
 - Devices: distinct users who logged in today by DEVICE_OS (Android / iOS).
 - Test locally: `python dev-db/seed.py live --speed 60 --bank-outage GTBank`
+
+## Login (pulse/auth.py)
+- Django's built-in accounts (stored in backend/db.sqlite3, passwords hashed with PBKDF2). No self sign-up; manage with `python manage.py pulse_user add|password|disable|enable|list <username>`.
+- /api/pulse returns 401 unless signed in. The page shell is public but contains no data.
+- 5 failed attempts per username+IP, or 20 per IP, lock logins for 15 minutes. Error messages never reveal whether a username exists.
+- Sessions: HttpOnly + SameSite=Strict cookies, 12 hours, or 30 days with "Keep this screen signed in". CSRF token required on login/logout.
+- Passwords: minimum 12 characters, common passwords rejected.
+- Every login, failure, lockout and logout is logged (logger pulse.auth) with username and IP.
+- Set PULSE_HTTPS=1 when served over HTTPS so cookies are marked Secure.

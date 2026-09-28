@@ -46,6 +46,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -116,6 +117,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
     {
         'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'OPTIONS': {'min_length': 12},
     },
     {
         'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
@@ -143,6 +145,10 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+FRONTEND_DIST = BASE_DIR.parent / "frontend" / "dist"
+WHITENOISE_ROOT = FRONTEND_DIST if FRONTEND_DIST.exists() else None
+WHITENOISE_INDEX_FILE = True
+
 
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
@@ -151,4 +157,28 @@ MAILERS = {
     'default': {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
     },
+}
+
+
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Strict"
+SESSION_SAVE_EVERY_REQUEST = True
+CSRF_COOKIE_SAMESITE = "Strict"
+
+HTTPS = os.environ.get("PULSE_HTTPS") == "1"
+SESSION_COOKIE_SECURE = HTTPS
+CSRF_COOKIE_SECURE = HTTPS
+if HTTPS:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+CSRF_TRUSTED_ORIGINS = [o for o in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if o]
+if DEBUG:
+    CSRF_TRUSTED_ORIGINS += ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5199"]
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {"plain": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}},
+    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "plain"}},
+    "loggers": {"pulse": {"handlers": ["console"], "level": "INFO", "propagate": False}},
 }

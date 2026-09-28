@@ -1,15 +1,21 @@
 import { motion } from 'motion/react'
 import { useMemo, useState } from 'react'
 import Backdrop from './components/Backdrop'
+import LoginScreen from './components/LoginScreen'
 import SceneDeck from './components/SceneDeck'
 import Ticker from './components/Ticker'
 import TopBar from './components/TopBar'
+import { useIdleCursor } from './hooks/useIdleCursor'
 import { usePulse } from './hooks/usePulse'
+import { useSession } from './hooks/useSession'
 import { needsAttention, topFor } from './lib/insights'
 import { alertScene, ATTENTION_BONUS_SECONDS, isShowable, scenes } from './scenes'
 
 export default function App() {
-  const { data, offline, clockOffset } = usePulse()
+  useIdleCursor()
+  const session = useSession()
+  const signedIn = session.status === 'in'
+  const { data, offline, clockOffset } = usePulse(signedIn, session.expired)
   const [sceneId, setSceneId] = useState(null)
   const alert = Boolean(data?.health?.alert)
 
@@ -23,8 +29,17 @@ export default function App() {
   return (
     <main className="relative isolate flex h-dvh flex-col overflow-hidden">
       <Backdrop alert={alert} />
-      <TopBar offline={offline} alert={alert} insight={data ? topFor(data, sceneId) : null} clockOffset={clockOffset} />
-      {data ? (
+      <TopBar
+        offline={offline || session.status === 'offline'}
+        alert={alert}
+        insight={data ? topFor(data, sceneId) : null}
+        clockOffset={clockOffset}
+        username={signedIn ? session.username : null}
+        onSignOut={session.signOut}
+      />
+      {session.status === 'out' ? (
+        <LoginScreen onSignIn={session.signIn} />
+      ) : data ? (
         <>
           <SceneDeck scenes={playlist} data={data} interrupt={alert} onSceneChange={setSceneId} />
           <Ticker data={data} />
