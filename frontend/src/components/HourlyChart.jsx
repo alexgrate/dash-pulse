@@ -1,4 +1,5 @@
 import { motion } from 'motion/react'
+import ChartHover, { TipNote, TipRow, TipTitle } from './ChartHover'
 
 const W = 1000
 const H = 400
@@ -30,8 +31,51 @@ export default function HourlyChart({ today, yesterday, hourNow, typical = null 
   const area = line && `${line} L${x(complete.length - 1)},${H} L0,${H} Z`
   const last = complete.length - 1
 
+  const weekday = typical?.weekday ?? 'day'
+
+  const tip = (h) => {
+    const label = `${String(h).padStart(2, '0')}:00–${String((h + 1) % 24).padStart(2, '0')}:00`
+    const low = typical?.hourly_low?.[h]
+    const high = typical?.hourly_high?.[h]
+    const usual = typical?.hourly_median?.[h]
+    const done = h < hourNow
+    const value = today[h]
+    let note
+    let tone = 'text-slate-300'
+    if (h > hourNow) note = 'This hour has not happened yet today.'
+    else if (!done) note = `This hour is still in progress: ${value} so far.`
+    else if (low == null) note = 'Not enough history yet to say what is normal.'
+    else if (value < low) {
+      note = `Quieter than a normal ${weekday} at this hour.`
+      tone = 'text-warn'
+    } else if (value > high) {
+      note = `Busier than a normal ${weekday} at this hour.`
+      tone = 'text-good'
+    } else note = `Normal for a ${weekday} at this hour.`
+    return (
+      <>
+        <TipTitle>{label}</TipTitle>
+        {h <= hourNow && <TipRow label="Today" value={`${value} transactions`} color="var(--color-accent)" />}
+        <TipRow label="Yesterday" value={`${yesterday[h]} transactions`} color="var(--color-muted)" />
+        {low != null && (
+          <TipRow
+            label={`Normal ${weekday}`}
+            value={`${Math.round(low)}–${Math.round(high)} (typically ${Math.round(usual)})`}
+            color="var(--color-brand-soft)"
+          />
+        )}
+        <TipNote tone={tone}>{note}</TipNote>
+      </>
+    )
+  }
+
+  const markers = (h) => [
+    ...(h < hourNow ? [{ y: y(today[h], max) / H, color: 'var(--color-accent)' }] : []),
+    { y: y(Math.min(yesterday[h], max * 0.98), max) / H, color: 'var(--color-muted)' },
+  ]
+
   return (
-    <div className="relative size-full">
+    <ChartHover count={24} render={tip} markers={markers} className="size-full">
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="size-full overflow-visible">
         <defs>
           <linearGradient id="todayFill" x1="0" x2="0" y1="0" y2="1">
@@ -123,6 +167,6 @@ export default function HourlyChart({ today, yesterday, hourNow, typical = null 
           <span key={t}>{t}</span>
         ))}
       </div>
-    </div>
+    </ChartHover>
   )
 }

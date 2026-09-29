@@ -6,6 +6,7 @@ const EASE = [0.16, 1, 0.3, 1]
 export default function SceneDeck({ scenes, data, interrupt = false, onSceneChange }) {
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
+  const [held, setHeld] = useState(false)
   const [lastInterrupt, setLastInterrupt] = useState(interrupt)
 
   if (interrupt !== lastInterrupt) {
@@ -22,10 +23,16 @@ export default function SceneDeck({ scenes, data, interrupt = false, onSceneChan
   }, [scene.id, onSceneChange])
 
   useEffect(() => {
-    if (paused) return
+    const onHold = (e) => setHeld(Boolean(e.detail))
+    window.addEventListener('pulse-hold', onHold)
+    return () => window.removeEventListener('pulse-hold', onHold)
+  }, [])
+
+  useEffect(() => {
+    if (paused || held) return
     const id = setTimeout(() => setIndex((current + 1) % scenes.length), scene.seconds * 1000)
     return () => clearTimeout(id)
-  }, [current, paused, scene.seconds, scenes.length])
+  }, [current, paused, held, scene.seconds, scenes.length])
 
   useEffect(() => {
     const onKey = (e) => {
@@ -39,7 +46,7 @@ export default function SceneDeck({ scenes, data, interrupt = false, onSceneChan
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <SceneRail scenes={scenes} index={current} paused={paused} />
+      <SceneRail scenes={scenes} index={current} paused={paused || held} />
       <div className="relative min-h-0 flex-1">
         <AnimatePresence mode="wait">
           <motion.section

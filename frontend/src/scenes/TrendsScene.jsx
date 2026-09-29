@@ -1,5 +1,6 @@
 import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
 import { motion } from 'motion/react'
+import ChartHover, { TipNote, TipRow, TipTitle } from '../components/ChartHover'
 import { Eyebrow, Panel } from '../components/ui'
 import { naira, num, pct } from '../lib/format'
 
@@ -39,6 +40,43 @@ function Change({ value, points = false, invert = false }) {
       {text}
     </span>
   )
+}
+
+const longDate = (iso) =>
+  new Date(`${iso}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+
+const median = (values) => {
+  const v = values.filter((x) => x != null).sort((a, b) => a - b)
+  if (!v.length) return null
+  const m = Math.floor(v.length / 2)
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2
+}
+
+function explainDay(series, i, rewardsDate) {
+  const d = series[i]
+  const normal = median(series.slice(Math.max(0, i - 28), i).map((x) => x.transactions))
+  const weekday = new Date(`${d.date}T12:00:00`).getDay()
+  const notes = []
+  if (d.date === rewardsDate)
+    notes.push({ tone: 'text-warn', text: 'The last day any customer received a reward payout.' })
+  if (normal && d.transactions >= normal * 1.6)
+    notes.push({
+      tone: 'text-good',
+      text: `Unusually busy: about ${(d.transactions / normal).toFixed(1)}× a normal day in the 4 weeks before it.`,
+    })
+  else if (normal && d.transactions <= normal * 0.6)
+    notes.push({
+      tone: 'text-warn',
+      text: `Unusually quiet: about ${pct(1 - d.transactions / normal, 0)} below a normal day in the 4 weeks before it.`,
+    })
+  if (d.failure_rate != null && d.settled >= 50 && d.failure_rate >= 0.25)
+    notes.push({
+      tone: 'text-bad',
+      text: `High failure day: ${num(d.failed)} of ${num(d.settled)} transactions failed. Check the Health tab for reasons.`,
+    })
+  if (weekday === 0 || weekday === 6) notes.push({ tone: 'text-slate-300', text: 'Weekend: days are usually quieter.' })
+  if (!notes.length) notes.push({ tone: 'text-slate-300', text: 'A normal day, in line with the weeks around it.' })
+  return { normal, notes }
 }
 
 export default function TrendsScene({ data }) {
@@ -87,55 +125,87 @@ export default function TrendsScene({ data }) {
         </div>
 
         <div className="relative mt-[3vh] min-h-0 flex-1 pb-7">
-          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="size-full overflow-visible">
-            <defs>
-              <linearGradient id="trendFill" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.28" />
-                <stop offset="100%" stopColor="var(--color-accent)" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            {[0.25, 0.5, 0.75].map((f) => (
-              <line
-                key={f}
-                x1="0"
-                x2={W}
-                y1={H * f}
-                y2={H * f}
-                stroke="var(--color-line)"
-                vectorEffect="non-scaling-stroke"
+          <ChartHover
+            count={series.length}
+            className="size-full"
+            markers={(i) => [
+              { y: (H - PAD - (smooth[i] / max) * (H - PAD * 2)) / H, color: 'var(--color-brand-soft)' },
+              { y: (H - PAD - (daily[i] / max) * (H - PAD * 2)) / H, color: 'var(--color-accent)' },
+            ]}
+            render={(i) => {
+              const d = series[i]
+              const { normal, notes } = explainDay(series, i, rewardsDate)
+              return (
+                <>
+                  <TipTitle>{longDate(d.date)}</TipTitle>
+                  <TipRow label="Transactions" value={num(d.transactions)} color="var(--color-accent)" />
+                  <TipRow label="7-day average" value={`${num(smooth[i])} a day`} color="var(--color-brand-soft)" />
+                  {normal != null && <TipRow label="Normal day before it" value={num(normal)} />}
+                  <TipRow label="Money moved" value={naira(d.value)} />
+                  <TipRow
+                    label="Failed"
+                    value={d.failure_rate == null ? '—' : `${num(d.failed)} (${pct(d.failure_rate, 0)})`}
+                  />
+                  <TipRow label="Sign-ups · accounts" value={`${num(d.signups)} · ${num(d.accounts)}`} />
+                  {notes.map((n) => (
+                    <TipNote key={n.text} tone={n.tone}>
+                      {n.text}
+                    </TipNote>
+                  ))}
+                </>
+              )
+            }}
+          >
+            <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="size-full overflow-visible">
+              <defs>
+                <linearGradient id="trendFill" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.28" />
+                  <stop offset="100%" stopColor="var(--color-accent)" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              {[0.25, 0.5, 0.75].map((f) => (
+                <line
+                  key={f}
+                  x1="0"
+                  x2={W}
+                  y1={H * f}
+                  y2={H * f}
+                  stroke="var(--color-line)"
+                  vectorEffect="non-scaling-stroke"
+                />
+              ))}
+              <motion.path
+                d={area}
+                fill="url(#trendFill)"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 1.2, delay: 0.8 }}
               />
-            ))}
-            <motion.path
-              d={area}
-              fill="url(#trendFill)"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 1.2, delay: 0.8 }}
-            />
-            <motion.path
-              d={path(daily, max)}
-              fill="none"
-              stroke="var(--color-accent)"
-              strokeOpacity="0.45"
-              strokeWidth="1.5"
-              vectorEffect="non-scaling-stroke"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 1, delay: 0.3 }}
-            />
-            <motion.path
-              d={path(smooth, max)}
-              fill="none"
-              stroke="var(--color-brand-soft)"
-              strokeWidth="3.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ filter: 'drop-shadow(0 0 8px var(--color-brand-soft))' }}
-              initial={{ pathLength: 0 }}
-              animate={{ pathLength: 1 }}
-              transition={{ duration: 2, ease: 'easeInOut', delay: 0.4 }}
-            />
-          </svg>
+              <motion.path
+                d={path(daily, max)}
+                fill="none"
+                stroke="var(--color-accent)"
+                strokeOpacity="0.45"
+                strokeWidth="1.5"
+                vectorEffect="non-scaling-stroke"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 1, delay: 0.3 }}
+              />
+              <motion.path
+                d={path(smooth, max)}
+                fill="none"
+                stroke="var(--color-brand-soft)"
+                strokeWidth="3.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ filter: 'drop-shadow(0 0 8px var(--color-brand-soft))' }}
+                initial={{ pathLength: 0 }}
+                animate={{ pathLength: 1 }}
+                transition={{ duration: 2, ease: 'easeInOut', delay: 0.4 }}
+              />
+            </svg>
+          </ChartHover>
 
           {rewardsIndex >= 0 && (
             <motion.div
@@ -209,6 +279,14 @@ export default function TrendsScene({ data }) {
   )
 }
 
+const EXPLAIN = {
+  value:
+    'Total money in successful transactions. Bigger transfers can raise it even when there are fewer transactions.',
+  signups: 'People who started signing up in the app that day, whether or not they finished.',
+  accounts: 'Sign-ups that ended with an account actually opened that day.',
+  failure_rate: 'Share of finished transactions that failed. Lower is better; the Health tab shows why they failed.',
+}
+
 function Metric({ label, field, series, summary, format, points = false, invert = false, delay }) {
   const values = avg7(series.map((d) => d[field] ?? 0))
   const max = Math.max(1e-9, ...values) * 1.1
@@ -224,17 +302,33 @@ function Metric({ label, field, series, summary, format, points = false, invert 
           <Change value={summary.vs_month_ago} points={points} invert={invert} /> vs 4 weeks ago
         </div>
       </div>
-      <svg viewBox="0 0 200 60" preserveAspectRatio="none" className="h-[70%] w-[45%] shrink-0 overflow-visible">
-        <motion.path
-          d={path(values, max, 200, 60, 4)}
-          fill="none"
-          stroke="var(--color-brand-soft)"
-          strokeWidth="2"
-          initial={{ pathLength: 0 }}
-          animate={{ pathLength: 1 }}
-          transition={{ duration: 1.6, delay: delay + 0.3, ease: EASE }}
-        />
-      </svg>
+      <ChartHover
+        count={series.length}
+        className="h-[70%] w-[45%] shrink-0"
+        markers={(i) => [{ y: (60 - 4 - (values[i] / max) * 52) / 60, color: 'var(--color-brand-soft)' }]}
+        render={(i) => (
+          <>
+            <TipTitle>
+              {label} · {longDate(series[i].date)}
+            </TipTitle>
+            <TipRow label="That day" value={series[i][field] == null ? '—' : format(series[i][field])} />
+            <TipRow label="7-day average" value={format(values[i])} color="var(--color-brand-soft)" />
+            <TipNote>{EXPLAIN[field]}</TipNote>
+          </>
+        )}
+      >
+        <svg viewBox="0 0 200 60" preserveAspectRatio="none" className="size-full overflow-visible">
+          <motion.path
+            d={path(values, max, 200, 60, 4)}
+            fill="none"
+            stroke="var(--color-brand-soft)"
+            strokeWidth="2"
+            initial={{ pathLength: 0 }}
+            animate={{ pathLength: 1 }}
+            transition={{ duration: 1.6, delay: delay + 0.3, ease: EASE }}
+          />
+        </svg>
+      </ChartHover>
     </Panel>
   )
 }
