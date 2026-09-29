@@ -8,6 +8,7 @@ from django.views.decorators.http import require_GET
 
 from . import queries, snapshot
 from .auth import login_required_json
+from .live import build_live
 
 logger = logging.getLogger(__name__)
 
@@ -30,3 +31,20 @@ def pulse(request):
             data = {**data, "stale": True}
     offset = timedelta(seconds=data.get("clock_offset_seconds", 0))
     return JsonResponse({**data, "server_time": (queries.machine_lagos_now() + offset).isoformat()})
+
+
+LIVE_CACHE_SECONDS = 5
+
+
+@require_GET
+@login_required_json
+def live(request):
+    data = cache.get("live")
+    if data is None:
+        try:
+            data = build_live()
+            cache.set("live", data, LIVE_CACHE_SECONDS)
+        except DatabaseError:
+            logger.exception("Building live feed failed")
+            return JsonResponse({"error": "unavailable"}, status=503)
+    return JsonResponse(data)

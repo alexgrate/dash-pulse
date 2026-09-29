@@ -1,14 +1,14 @@
 import AlertScene from './AlertScene'
 import BanksScene from './BanksScene'
-import BriefingScene from './BriefingScene'
 import FlowScene from './FlowScene'
 import FunnelScene from './FunnelScene'
 import HealthScene from './HealthScene'
+import LiveScene from './LiveScene'
 import MapScene from './MapScene'
 import PulseScene from './PulseScene'
 
 export const scenes = [
-  { id: 'briefing', title: 'Briefing', seconds: 22, Component: BriefingScene },
+  { id: 'live', title: 'Live', seconds: 24, Component: LiveScene },
   { id: 'pulse', title: 'Pulse', seconds: 18, Component: PulseScene },
   { id: 'flow', title: 'Money & people', seconds: 16, Component: FlowScene },
   { id: 'banks', title: 'Banks & devices', seconds: 18, Component: BanksScene },

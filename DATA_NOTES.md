@@ -85,3 +85,8 @@ password, salt, BVN, NIN, *_IMAGE_PATH, names, phone, email, balances (without a
 - Set PULSE_HTTPS=1 when served over HTTPS so cookies are marked Secure.
 - User admin page at /manage/ (Django admin, Users only). Only accounts marked admin (`pulse_user make-admin <name>`) can open it; its own login form is disabled, so admins sign in through the dashboard login (with lockout and audit log) and are then let in. Admins see a "Manage users" link next to Sign out.
 - Deploy step: `python manage.py collectstatic --noinput` so the admin page's styling is served.
+
+## Live feed (pulse/live.py, /api/live)
+- Replaces the old Briefing scene. Latest 200 rows of the legacy transactions table, read by primary key (ID DESC) so it stays fast however large the table grows. Cached 5 seconds; the scene polls every 5 seconds while on screen.
+- Each row sends only product, destination bank (transfers to other banks), amount, outcome, a classified failure category and time. No names, account numbers or raw messages.
+- Heartbeat: time since the last transaction, judged against the typical number of transactions for this hour on this weekday. Amber after 3× the usual gap (min 5 min), red after 6× (min 15 min).
