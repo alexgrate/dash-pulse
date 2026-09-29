@@ -333,3 +333,11 @@ class TrendTests(SimpleTestCase):
         s = compare(series, "transactions")
         self.assertEqual(s["this_week"], 700)
         self.assertAlmostEqual(s["vs_month_ago"], -0.3)
+
+
+    def test_one_spike_day_does_not_move_the_week(self):
+        from .trends import compare
+        series = [{"transactions": 100}] * 34 + [{"transactions": 1000}]
+        s = compare(series, "transactions")
+        self.assertEqual(s["this_week"], 100)
+        self.assertEqual(s["vs_month_ago"], 0)

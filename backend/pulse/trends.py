@@ -1,4 +1,5 @@
 from datetime import timedelta
+from statistics import median
 
 from .queries import LEGACY, ONBOARDING, OUTCOME_SQL, PAYMENTS, fetch
 
@@ -9,9 +10,17 @@ def daily(sql, params, fields):
     return {r["d"]: {f: float(r[f] or 0) for f in fields} for r in fetch(sql, params)}
 
 
+def week_days(series, start, end):
+    return series[-end:len(series) - start] if start else series[-end:]
+
+
 def week(series, key, start, end):
-    days = series[-end:len(series) - start] if start else series[-end:]
-    return sum(d[key] for d in days)
+    return sum(d[key] for d in week_days(series, start, end))
+
+
+def typical_day(series, key, start, end):
+    days = week_days(series, start, end)
+    return median(d[key] for d in days) if days else 0
 
 
 def compare(series, key, ratio_of=None):
@@ -19,7 +28,7 @@ def compare(series, key, ratio_of=None):
         if ratio_of:
             total = week(series, ratio_of, start, end)
             return week(series, key, start, end) / total if total else None
-        return week(series, key, start, end) / 7
+        return typical_day(series, key, start, end)
 
     now, last_week, month_ago = value(0, 7), value(7, 14), value(28, 35)
 

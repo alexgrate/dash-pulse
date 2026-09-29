@@ -96,3 +96,4 @@ password, salt, BVN, NIN, *_IMAGE_PATH, names, phone, email, balances (without a
 - Weekly comparisons use daily averages: last 7 days vs the 7 before, and vs days 29–35 ago.
 - Insight rule trend_shifts: flags any metric whose last-7-day average is 20%+ above or below four weeks earlier (only if it averaged 20+ a day). Keeps sustained changes, such as the ~33% drop after rewards stopped on 17 Sep 2026, in the top bar and ticker.
 - The chart marks the last reward payout date.
+- Weekly comparisons use the typical (median) day of each week, not the average, so one spike day (e.g. 25 Sep 2026: 2,368 transactions, 785 failed) cannot move a week. Failure rate stays total failed ÷ total settled.

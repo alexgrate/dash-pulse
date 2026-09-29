@@ -60,7 +60,7 @@ export default function TrendsScene({ data }) {
       <Panel className="col-span-8 flex min-h-0 flex-col">
         <div className="flex items-start justify-between gap-6">
           <div>
-            <Eyebrow>Transactions per day · last {t.days} days</Eyebrow>
+            <Eyebrow>Transactions per day · last {t.days} days · weeks compared by their typical day</Eyebrow>
             <div className="mt-1 text-[clamp(16px,1.4vw,30px)] font-medium">Where we're heading</div>
           </div>
           <div className="flex gap-[2vw] text-right">

@@ -382,7 +382,7 @@ def trend_shifts(p):
             f"trend-{key}", "trends", "warn" if change < 0 else "good",
             "trending-down" if change < 0 else "trending-up",
             f"{label} {'down' if change < 0 else 'up'} {pct(abs(change))} on a month ago",
-            f"About {fmt_value(s['this_week'])} a day over the last 7 days vs {fmt_value(s['month_ago'])} a day "
+            f"A typical day is about {fmt_value(s['this_week'])} this week vs {fmt_value(s['month_ago'])} "
             f"four weeks earlier{'. It has held at this level for two weeks' if steady else ''}.",
             (45 if key == "transactions" else 30) + min(abs(change) * 60, 25),
         ))
