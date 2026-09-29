@@ -1,0 +1,240 @@
+import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
+import { motion } from 'motion/react'
+import { Eyebrow, Panel } from '../components/ui'
+import { naira, num, pct } from '../lib/format'
+
+const EASE = [0.16, 1, 0.3, 1]
+const W = 1000
+const H = 360
+const PAD = 14
+
+const avg7 = (values) =>
+  values.map((_, i) => {
+    const slice = values.slice(Math.max(0, i - 6), i + 1)
+    return slice.reduce((a, b) => a + b, 0) / slice.length
+  })
+
+const path = (values, max, w = W, h = H, pad = PAD) =>
+  values
+    .map((v, i) => {
+      const x = (i / Math.max(values.length - 1, 1)) * w
+      const y = h - pad - ((v ?? 0) / max) * (h - pad * 2)
+      return `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`
+    })
+    .join(' ')
+
+const shortDate = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+
+function Change({ value, points = false, invert = false }) {
+  if (value == null) return <span className="text-muted">—</span>
+  const flat = points ? Math.abs(value) < 0.01 : Math.abs(value) < 0.05
+  const up = value > 0
+  const good = invert ? !up : up
+  const Icon = flat ? Minus : up ? ArrowUpRight : ArrowDownRight
+  const tone = flat ? 'text-muted' : good ? 'text-good' : 'text-bad'
+  const text = points ? `${(Math.abs(value) * 100).toFixed(1)} pts` : pct(Math.abs(value), 0)
+  return (
+    <span className={`tabular inline-flex items-center gap-1 ${tone}`}>
+      <Icon className="size-[1.1em]" strokeWidth={2.5} />
+      {text}
+    </span>
+  )
+}
+
+export default function TrendsScene({ data }) {
+  const t = data.trends
+  if (!t?.series?.length) {
+    return <div className="grid h-full place-items-center text-muted">Building the 90-day picture…</div>
+  }
+  const series = t.series
+  const daily = series.map((d) => d.transactions)
+  const smooth = avg7(daily)
+  const max = Math.max(1, ...daily) * 1.1
+  const s = t.summary.transactions
+  const rewardsDate = data.rewards?.last_paid_at?.slice(0, 10)
+  const rewardsIndex = series.findIndex((d) => d.date === rewardsDate)
+  const area = `${path(daily, max)} L${W},${H} L0,${H} Z`
+
+  return (
+    <div className="grid h-full grid-cols-12 grid-rows-[minmax(0,1fr)] gap-[2.5vw]">
+      <Panel className="col-span-8 flex min-h-0 flex-col">
+        <div className="flex items-start justify-between gap-6">
+          <div>
+            <Eyebrow>Transactions per day · last {t.days} days</Eyebrow>
+            <div className="mt-1 text-[clamp(16px,1.4vw,30px)] font-medium">Where we're heading</div>
+          </div>
+          <div className="flex gap-[2vw] text-right">
+            {[
+              ['This week', s.this_week, null],
+              ['Last week', s.last_week, s.vs_last_week],
+              ['4 weeks ago', s.month_ago, s.vs_month_ago],
+            ].map(([label, value, change]) => (
+              <div key={label}>
+                <div className="text-[clamp(9px,0.7vw,14px)] tracking-[0.18em] text-muted uppercase">{label}</div>
+                <div className="tabular mt-1 text-[clamp(18px,1.7vw,36px)] font-semibold">
+                  {num(value)}
+                  <span className="ml-1 text-[clamp(10px,0.75vw,15px)] font-normal text-muted">/day</span>
+                </div>
+                {change != null && (
+                  <div className="text-[clamp(11px,0.85vw,17px)]">
+                    <span className="mr-1 text-muted">this week</span>
+                    <Change value={change} />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="relative mt-[3vh] min-h-0 flex-1 pb-7">
+          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="size-full overflow-visible">
+            <defs>
+              <linearGradient id="trendFill" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.28" />
+                <stop offset="100%" stopColor="var(--color-accent)" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            {[0.25, 0.5, 0.75].map((f) => (
+              <line
+                key={f}
+                x1="0"
+                x2={W}
+                y1={H * f}
+                y2={H * f}
+                stroke="var(--color-line)"
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
+            <motion.path
+              d={area}
+              fill="url(#trendFill)"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 1.2, delay: 0.8 }}
+            />
+            <motion.path
+              d={path(daily, max)}
+              fill="none"
+              stroke="var(--color-accent)"
+              strokeOpacity="0.45"
+              strokeWidth="1.5"
+              vectorEffect="non-scaling-stroke"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 1, delay: 0.3 }}
+            />
+            <motion.path
+              d={path(smooth, max)}
+              fill="none"
+              stroke="var(--color-brand-soft)"
+              strokeWidth="3.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ filter: 'drop-shadow(0 0 8px var(--color-brand-soft))' }}
+              initial={{ pathLength: 0 }}
+              animate={{ pathLength: 1 }}
+              transition={{ duration: 2, ease: 'easeInOut', delay: 0.4 }}
+            />
+          </svg>
+
+          {rewardsIndex >= 0 && (
+            <motion.div
+              className="absolute top-0 bottom-7 border-l border-dashed border-warn/60"
+              style={{ left: `${(rewardsIndex / (series.length - 1)) * 100}%` }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 2 }}
+            >
+              <span className="absolute top-0 left-2 rounded-full bg-warn/15 px-2 py-0.5 text-[clamp(10px,0.75vw,15px)] whitespace-nowrap text-warn">
+                Rewards last paid · {shortDate(rewardsDate)}
+              </span>
+            </motion.div>
+          )}
+
+          <div className="absolute inset-x-0 bottom-0 flex justify-between font-mono text-[clamp(10px,0.75vw,15px)] text-muted">
+            {[0, 0.25, 0.5, 0.75, 1].map((f) => {
+              const d = series[Math.round(f * (series.length - 1))]
+              return <span key={f}>{shortDate(d.date)}</span>
+            })}
+          </div>
+        </div>
+
+        <div className="mt-2 flex gap-6 text-[clamp(11px,0.85vw,17px)] text-muted">
+          <span className="flex items-center gap-2">
+            <span className="h-[3px] w-6 rounded-full bg-brand-soft" /> 7-day average
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="h-[2px] w-6 rounded-full bg-accent/50" /> Each day
+          </span>
+        </div>
+      </Panel>
+
+      <div className="col-span-4 grid min-h-0 grid-rows-4 gap-[1.2vw]">
+        <Metric
+          label="Value moved"
+          field="value"
+          series={series}
+          summary={t.summary.value}
+          format={naira}
+          delay={0.15}
+        />
+        <Metric
+          label="Sign-ups"
+          field="signups"
+          series={series}
+          summary={t.summary.signups}
+          format={num}
+          delay={0.25}
+        />
+        <Metric
+          label="New accounts"
+          field="accounts"
+          series={series}
+          summary={t.summary.accounts}
+          format={num}
+          delay={0.35}
+        />
+        <Metric
+          label="Failure rate"
+          field="failure_rate"
+          series={series}
+          summary={t.summary.failure_rate}
+          format={(v) => pct(v, 1)}
+          points
+          invert
+          delay={0.45}
+        />
+      </div>
+    </div>
+  )
+}
+
+function Metric({ label, field, series, summary, format, points = false, invert = false, delay }) {
+  const values = avg7(series.map((d) => d[field] ?? 0))
+  const max = Math.max(1e-9, ...values) * 1.1
+  return (
+    <Panel className="flex min-h-0 items-center gap-[1.2vw] !py-[1.4vh]" delay={delay}>
+      <div className="min-w-0 flex-1">
+        <Eyebrow>{label}</Eyebrow>
+        <div className="tabular mt-1 text-[clamp(18px,1.6vw,34px)] leading-tight font-semibold">
+          {format(summary.this_week)}
+          {!points && <span className="ml-1 text-[clamp(10px,0.75vw,15px)] font-normal text-muted">/day</span>}
+        </div>
+        <div className="text-[clamp(11px,0.85vw,17px)] text-muted">
+          <Change value={summary.vs_month_ago} points={points} invert={invert} /> vs 4 weeks ago
+        </div>
+      </div>
+      <svg viewBox="0 0 200 60" preserveAspectRatio="none" className="h-[70%] w-[45%] shrink-0 overflow-visible">
+        <motion.path
+          d={path(values, max, 200, 60, 4)}
+          fill="none"
+          stroke="var(--color-brand-soft)"
+          strokeWidth="2"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 1.6, delay: delay + 0.3, ease: EASE }}
+        />
+      </svg>
+    </Panel>
+  )
+}

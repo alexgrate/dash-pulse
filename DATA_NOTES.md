@@ -90,3 +90,9 @@ password, salt, BVN, NIN, *_IMAGE_PATH, names, phone, email, balances (without a
 - Replaces the old Briefing scene. Latest 200 rows of the legacy transactions table, read by primary key (ID DESC) so it stays fast however large the table grows. Cached 5 seconds; the scene polls every 5 seconds while on screen.
 - Each row sends only product, destination bank (transfers to other banks), amount, outcome, a classified failure category and time. No names, account numbers or raw messages.
 - Heartbeat: time since the last transaction, judged against the typical number of transactions for this hour on this weekday. Amber after 3× the usual gap (min 5 min), red after 6× (min 15 min).
+
+## Trends (pulse/trends.py)
+- Last 90 full days (today excluded), one point per day: transactions, successful value, failure rate, sign-ups, accounts opened. Cached for an hour.
+- Weekly comparisons use daily averages: last 7 days vs the 7 before, and vs days 29–35 ago.
+- Insight rule trend_shifts: flags any metric whose last-7-day average is 20%+ above or below four weeks earlier (only if it averaged 20+ a day). Keeps sustained changes, such as the ~33% drop after rewards stopped on 17 Sep 2026, in the top bar and ticker.
+- The chart marks the last reward payout date.

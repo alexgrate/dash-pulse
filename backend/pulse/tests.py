@@ -310,3 +310,26 @@ class BaselineMathTests(SimpleTestCase):
         from .baselines import band, typical
         self.assertEqual(typical([10, 20]), 15)
         self.assertEqual(band([10, 20]), (12.5, 17.5))
+
+
+class TrendTests(SimpleTestCase):
+    def summary(self, now, month_ago, last_week):
+        return {"transactions": {"this_week": now, "last_week": last_week, "month_ago": month_ago,
+                                 "vs_last_week": now / last_week - 1, "vs_month_ago": now / month_ago - 1}}
+
+    def test_sustained_drop_is_flagged(self):
+        result = run(trends={"summary": self.summary(667, 1000, 680)})
+        item = next(i for i in result["items"] if i["id"] == "trend-transactions")
+        self.assertEqual(item["severity"], "warn")
+        self.assertIn("down 33%", item["title"])
+        self.assertIn("two weeks", item["detail"])
+
+    def test_small_change_is_ignored(self):
+        self.assertNotIn("trend-transactions", ids(run(trends={"summary": self.summary(950, 1000, 960)})))
+
+    def test_weekly_totals_from_series(self):
+        from .trends import compare
+        series = [{"transactions": 1000}] * 28 + [{"transactions": 700}] * 7
+        s = compare(series, "transactions")
+        self.assertEqual(s["this_week"], 700)
+        self.assertAlmostEqual(s["vs_month_ago"], -0.3)

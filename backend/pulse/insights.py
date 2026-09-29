@@ -356,7 +356,40 @@ def bank_health(p, b):
     return out
 
 
-RULES = 10
+TREND_LABELS = {
+    "transactions": "Transactions",
+    "value": "Value moved",
+    "signups": "Sign-ups",
+    "accounts": "New accounts",
+}
+TREND_MIN_DAILY = 20
+TREND_SHIFT = 0.2
+
+
+def trend_shifts(p):
+    summary = (p.get("trends") or {}).get("summary") or {}
+    out = []
+    for key, label in TREND_LABELS.items():
+        s = summary.get(key)
+        if not s or s["vs_month_ago"] is None or (s["month_ago"] or 0) < TREND_MIN_DAILY:
+            continue
+        change = s["vs_month_ago"]
+        if abs(change) < TREND_SHIFT:
+            continue
+        fmt_value = naira if key == "value" else fmt
+        steady = s["vs_last_week"] is not None and abs(s["vs_last_week"]) < TREND_SHIFT / 2
+        out.append(insight(
+            f"trend-{key}", "trends", "warn" if change < 0 else "good",
+            "trending-down" if change < 0 else "trending-up",
+            f"{label} {'down' if change < 0 else 'up'} {pct(abs(change))} on a month ago",
+            f"About {fmt_value(s['this_week'])} a day over the last 7 days vs {fmt_value(s['month_ago'])} a day "
+            f"four weeks earlier{'. It has held at this level for two weeks' if steady else ''}.",
+            (45 if key == "transactions" else 30) + min(abs(change) * 60, 25),
+        ))
+    return out
+
+
+RULES = 11
 
 
 def annotate_products(p, b):
@@ -381,6 +414,7 @@ def build(p, b):
         *geography(p),
         *rewards(p, b),
         *bank_health(p, b),
+        *trend_shifts(p),
     ]
     items.sort(key=lambda i: -i["score"])
     return {
