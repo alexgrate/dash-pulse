@@ -7,7 +7,7 @@ from .queries import BANKS_SQL, LEGACY, LIVENESS, ONBOARDING, OUTCOME_SQL, PAYME
 from .reasons import REASON_SQL
 from .reasons import group as group_reasons
 
-TYPICAL_WEEKS = 4
+TYPICAL_WEEKS = 8
 COMPARE_DAYS = 7
 CACHE_SECONDS = 15 * 60
 
@@ -18,6 +18,30 @@ def cached(key, build):
         value = build()
         cache.set(key, value, CACHE_SECONDS)
     return value
+
+
+def trimmed(values):
+    ordered = sorted(values)
+    return ordered[1:-1] if len(ordered) >= 4 else ordered
+
+
+def percentile(values, q):
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    pos = (len(ordered) - 1) * q
+    lower = int(pos)
+    upper = min(lower + 1, len(ordered) - 1)
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * (pos - lower)
+
+
+def typical(values):
+    return median(trimmed(values))
+
+
+def band(values):
+    kept = trimmed(values)
+    return percentile(kept, 0.25), percentile(kept, 0.75)
 
 
 def typical_day(now):
@@ -52,17 +76,19 @@ def typical_day(now):
             by_hour[h].append(counts.get((d, h), 0))
 
     fractions = [int(d["so_far"]) / int(d["total"]) for d in days]
+    hour_bands = [band(v) for v in by_hour.values()]
+    fraction_low, fraction_high = band(fractions)
     return {
         "weekday": today.strftime("%A"),
         "days": len(days),
-        "hourly_median": [median(v) for v in by_hour.values()],
-        "hourly_low": [min(v) for v in by_hour.values()],
-        "hourly_high": [max(v) for v in by_hour.values()],
-        "so_far_median": median(int(d["so_far"]) for d in days),
-        "total_median": median(int(d["total"]) for d in days),
-        "fraction_median": median(fractions),
-        "fraction_low": min(fractions),
-        "fraction_high": max(fractions),
+        "hourly_median": [typical(v) for v in by_hour.values()],
+        "hourly_low": [low for low, _ in hour_bands],
+        "hourly_high": [high for _, high in hour_bands],
+        "so_far_median": typical([int(d["so_far"]) for d in days]),
+        "total_median": typical([int(d["total"]) for d in days]),
+        "fraction_median": typical(fractions),
+        "fraction_low": fraction_low,
+        "fraction_high": fraction_high,
     }
 
 
@@ -89,7 +115,7 @@ def typical_onboarding(now, column):
         GROUP BY d
     """, {"since": today - timedelta(weeks=TYPICAL_WEEKS), "today": today, "t": now.time()})
     values = [int(r["so_far"] or 0) for r in rows]
-    return median(values) if len(values) >= 2 else None
+    return typical(values) if len(values) >= 2 else None
 
 
 def product_rates(today):

@@ -295,3 +295,18 @@ class LoginTests(TestCase):
         r = self.client.post("/manage/login/", {"username": "ops", "password": self.password})
         self.assertEqual(r.status_code, 302)
         self.assertFalse(self.client.get("/api/auth/session").json()["authenticated"])
+
+
+class BaselineMathTests(SimpleTestCase):
+    def test_one_odd_day_does_not_move_typical(self):
+        from .baselines import band, typical
+        normal = [100, 104, 98, 102, 101, 99, 103]
+        self.assertAlmostEqual(typical(normal + [900]), typical(normal), delta=2)
+        low, high = band(normal + [900])
+        self.assertLess(high, 110)
+        self.assertGreater(low, 95)
+
+    def test_few_days_still_work(self):
+        from .baselines import band, typical
+        self.assertEqual(typical([10, 20]), 15)
+        self.assertEqual(band([10, 20]), (12.5, 17.5))

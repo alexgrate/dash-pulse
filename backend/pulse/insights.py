@@ -110,10 +110,10 @@ def last_hour(p, typical):
     if mid < 10:
         return []
     window = f"{h:02d}:00–{h + 1:02d}:00"
-    if actual > high * 1.15:
+    if actual > high * 1.25:
         return [insight("hour", "pulse", "good", "zap", f"{window} was unusually busy",
                         f"{fmt(actual)} transactions vs a usual {fmt(low)}–{fmt(high)}", 40)]
-    if actual < low * 0.85:
+    if actual < low * 0.75:
         return [insight("hour", "pulse", "warn", "activity", f"{window} was unusually quiet",
                         f"{fmt(actual)} transactions vs a usual {fmt(low)}–{fmt(high)}. Check app and channel health.",
                         58)]

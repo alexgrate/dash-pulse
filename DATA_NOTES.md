@@ -46,7 +46,7 @@ password, salt, BVN, NIN, *_IMAGE_PATH, names, phone, email, balances (without a
 
 ## Intelligence (pulse/baselines.py, pulse/insights.py)
 - Runs entirely inside Django. No external AI service; no data leaves the bank network.
-- "Typical" = the same weekday over the last 4 weeks (e.g. today vs the last 4 Fridays). Needs at least 2 such days.
+- "Typical" = the same weekday over the last 8 weeks. With 4+ days, the single busiest and quietest day are dropped before taking the median, so one-off spikes (promos, outages, catch-ups) cannot distort it. The purple band is the middle half (25th–75th percentile) of those days. Needs at least 2 such days.
 - Forecast = transactions so far ÷ the share of a typical day that is usually done by this time.
 - Other baselines (failure reasons, product failure/reversal rates, face-check failures, rewards per transaction) use the previous 7 days.
 - Baselines are cached for 15 minutes; the live numbers still refresh every 60 seconds.
