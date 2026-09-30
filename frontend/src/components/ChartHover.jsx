@@ -11,12 +11,14 @@ function useHold(active) {
 export default function ChartHover({ count, render, markers, className = '', children }) {
   const ref = useRef(null)
   const [index, setIndex] = useState(null)
+  const [flip, setFlip] = useState(false)
   useHold(index != null)
 
   function move(e) {
     const box = ref.current.getBoundingClientRect()
     const f = Math.min(Math.max((e.clientX - box.left) / box.width, 0), 1)
     setIndex(Math.round(f * (count - 1)))
+    setFlip(e.clientX > window.innerWidth / 2)
   }
 
   const f = index == null ? 0 : index / Math.max(count - 1, 1)
@@ -42,7 +44,7 @@ export default function ChartHover({ count, render, markers, className = '', chi
               className="pointer-events-none absolute top-2 z-30 w-max max-w-[min(360px,80vw)] rounded-2xl border border-white/10 bg-[#0b0f1a]/95 px-4 py-3 text-[clamp(12px,0.85vw,16px)] shadow-2xl backdrop-blur-xl"
               style={{
                 left: `${f * 100}%`,
-                transform: f > 0.55 ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)',
+                transform: flip ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)',
               }}
             >
               {content}
