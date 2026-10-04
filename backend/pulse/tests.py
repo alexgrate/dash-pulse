@@ -350,7 +350,7 @@ class ExploreAccessTests(TestCase):
 
         from .auth import EXPLORER_GROUP, explorer_required
 
-        self.group = Group.objects.create(name=EXPLORER_GROUP)
+        self.group = Group.objects.get(name=EXPLORER_GROUP)
         self.user = get_user_model().objects.create_user("md", password="correct-horse-battery-staple")
         self.view = explorer_required(lambda request: JsonResponse({"ok": True}))
 
