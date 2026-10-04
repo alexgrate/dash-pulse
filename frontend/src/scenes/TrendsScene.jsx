@@ -2,6 +2,7 @@ import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
 import { motion } from 'motion/react'
 import ChartHover, { TipNote, TipRow, TipTitle } from '../components/ChartHover'
 import { Eyebrow, Panel } from '../components/ui'
+import { list, useExplore } from '../lib/explore'
 import { naira, num, pct } from '../lib/format'
 
 const EASE = [0.16, 1, 0.3, 1]
@@ -80,6 +81,7 @@ function explainDay(series, i, rewardsDate) {
 }
 
 export default function TrendsScene({ data }) {
+  const { enabled, open } = useExplore()
   const t = data.trends
   if (!t?.series?.length) {
     return <div className="grid h-full place-items-center text-muted">Building the 90-day picture…</div>
@@ -128,6 +130,7 @@ export default function TrendsScene({ data }) {
           <ChartHover
             count={series.length}
             className="size-full"
+            onPick={enabled ? (i) => open(list({ date: series[i].date })) : undefined}
             markers={(i) => [
               { y: (H - PAD - (smooth[i] / max) * (H - PAD * 2)) / H, color: 'var(--color-brand-soft)' },
               { y: (H - PAD - (daily[i] / max) * (H - PAD * 2)) / H, color: 'var(--color-accent)' },

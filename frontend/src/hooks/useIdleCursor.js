@@ -2,8 +2,12 @@ import { useEffect } from 'react'
 
 const IDLE_MS = 3000
 
-export function useIdleCursor() {
+export function useIdleCursor(active = true) {
   useEffect(() => {
+    if (!active) {
+      document.body.classList.remove('cursor-idle')
+      return
+    }
     let id
     const wake = () => {
       document.body.classList.remove('cursor-idle')
@@ -18,5 +22,5 @@ export function useIdleCursor() {
       window.removeEventListener('mousemove', wake)
       window.removeEventListener('keydown', wake)
     }
-  }, [])
+  }, [active])
 }

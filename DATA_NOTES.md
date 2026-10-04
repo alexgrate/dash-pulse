@@ -97,3 +97,11 @@ password, salt, BVN, NIN, *_IMAGE_PATH, names, phone, email, balances (without a
 - Insight rule trend_shifts: flags any metric whose last-7-day average is 20%+ above or below four weeks earlier (only if it averaged 20+ a day). Keeps sustained changes, such as the ~33% drop after rewards stopped on 17 Sep 2026, in the top bar and ticker.
 - The chart marks the last reward payout date.
 - Weekly comparisons use the typical (median) day of each week, not the average, so one spike day (e.g. 25 Sep 2026: 2,368 transactions, 785 failed) cannot move a week. Failure rate stays total failed ÷ total settled.
+
+## Explore mode (pulse/explore.py, frontend ExplorePanel)
+- For the MD only: accounts in the "Explorer" group (`pulse_user allow-explore <name>`). Being an admin is not enough.
+- The "Explore" button in the top bar stops the rotation, makes tabs clickable, and turns numbers, rows and chart points into click-throughs.
+- /api/explore/transactions: one day of transactions (default today), filters status, kinds, bank, reason, hour, search; 50 per page, newest first.
+- /api/explore/transactions/<id>: full detail — customer (name, phone, email, KYC tier from cba-mcs.accounts), beneficiary, all references, raw core-banking and provider responses, reversal, a timeline, and the customer's other transactions that day.
+- /api/explore/onboarding?phase=…&scope=today|30d: people stuck at a step, with name, phone, email and how long they have waited. BVN, NIN, document images and balances are never read.
+- Every explore request is written to the ExploreLog audit table (user, time, path, filters, IP), visible read-only under Manage users.

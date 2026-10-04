@@ -2,7 +2,9 @@ import { Clock, Percent, UserPlus } from 'lucide-react'
 import { motion } from 'motion/react'
 import AnimatedNumber from '../components/AnimatedNumber'
 import Delta from '../components/Delta'
+import Drill from '../components/Drill'
 import { Eyebrow, Panel } from '../components/ui'
+import { stuck } from '../lib/explore'
 import { num, pct } from '../lib/format'
 import { versus } from '../lib/insights'
 
@@ -108,7 +110,7 @@ export default function FunnelScene({ data }) {
         </div>
         <div className="mt-[1.6vh] flex min-h-0 flex-1 flex-col justify-between">
           {f.stuck.map((s, i) => (
-            <div key={s.phase}>
+            <Drill key={s.phase} to={stuck(s.phase)} className="-mx-2 px-2 py-0.5">
               <div className="flex items-end justify-between gap-3">
                 <span className="min-w-0">
                   <span className="block truncate text-[clamp(11px,0.9vw,19px)] leading-tight">{s.label}</span>
@@ -133,7 +135,7 @@ export default function FunnelScene({ data }) {
                   transition={{ duration: 1.3, delay: 0.5 + i * 0.06, ease: EASE }}
                 />
               </div>
-            </div>
+            </Drill>
           ))}
         </div>
       </Panel>

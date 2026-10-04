@@ -164,11 +164,12 @@ TABLES = {
     "legacy": ("`dashmfb-mcs`.DashMFB_Transactions",
                "PAYMENT_REFERENCE, TRANSACTION_TYPE, AMOUNT, CREATED, UPDATED, CBA_RESPONSE_CODE, "
                "CBA_MESSAGE, PROVIDER_RESPONSE_MESSAGE, PROVIDER, ACCOUNT_NUMBER, BENEFICIARY_BANK_NAME, LOCATION_LAT, "
-               "LOCATION_LON, TENANT_ID"),
+               "LOCATION_LON, TENANT_ID, NARRATION, BENEFICIARY_NAME, BENEFICIARY_ACCOUNT, CBA_REFERENCE, "
+               "PROVIDER_REFERENCE"),
     "pt": ("`dashmfb-cba-mcs`.payment_transactions",
            "id, transfer_amount, beneficiary_bank_name, source_account, payment_reference, provider, "
            "status, transfer_type, transaction_direction, transaction_category, requery_count, "
-           "created_at, updated_at"),
+           "created_at, updated_at, source_account_name, beneficiary_name, narration, session_id"),
     "bills": ("`dashmfb-billspayment`.bills_payment_transactions",
               "amount, biller_id, request_reference, status, response_code, response_message, "
               "latitude, longitude, created_at, completed_at"),
@@ -176,7 +177,10 @@ TABLES = {
               "DEVICE_ID, USERNAME, LOCATION, DEVICE_OS, LOGIN_TIME, TENANT_ID"),
     "onboarding": ("`dashmfb-mcs`.DashMFB_UM_ONBOARDING_PROCESS",
                    "ONBOARDING_PHASE, NEXT_ONBOARDING_PHASE, DATE_CREATED, DATE_UPDATED, "
-                   "ACCOUNT_OPENED_DATE, TENANT_ID"),
+                   "ACCOUNT_OPENED_DATE, TENANT_ID, FIRSTNAME, LASTNAME, EMAIL, PHONE_NUMBER"),
+    "accounts": ("`dashmfb-cba-mcs`.accounts",
+                 "id, account_number, account_name, customer_email_address, customer_phone_number, "
+                 "account_kyc_tier_code, status, created_at"),
     "liveness": ("`dashmfb-mcs`.LIVENESS_CHECK_LOG",
                  "DATE_CREATED, SCORE, CHANNEL, STATUS, PURPOSE, USERNAME, TENANT_ID"),
     "user": ("`dashmfb-authservice`.UM_FLAMINGO_USER",
@@ -293,6 +297,24 @@ def account_number(uid):
     return f"20{uid:08d}"
 
 
+FIRST_NAMES = ["Ada", "Chinedu", "Tunde", "Ngozi", "Emeka", "Funmi", "Ibrahim", "Aisha", "Segun", "Kemi",
+               "Obinna", "Zainab", "Yusuf", "Bisi", "Uche", "Amaka", "Femi", "Halima", "Chika", "Seyi"]
+LAST_NAMES = ["Okafor", "Adeyemi", "Bello", "Eze", "Ogunleye", "Abubakar", "Nwosu", "Balogun", "Okeke",
+              "Ibrahim", "Adebayo", "Musa", "Onyeka", "Akande", "Danjuma", "Obi", "Lawal", "Chukwu"]
+
+
+def person(uid):
+    r = random.Random(uid)
+    first, last = r.choice(FIRST_NAMES), r.choice(LAST_NAMES)
+    return {
+        "first": first,
+        "last": last,
+        "name": f"{first} {last}",
+        "email": f"{first}.{last}{uid % 10000}@example.com".lower(),
+        "phone": f"080{uid % 100000000:08d}",
+    }
+
+
 def utcnow():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -373,9 +395,20 @@ class Seeder:
             message = "Successful"
         updated = local if outcome == "PENDING" else local + timedelta(seconds=random.randint(2, 30))
 
+        sender = person(uid)
+        if is_bill:
+            receiver, receiver_account = None, f"0{random.randint(7000000000, 9099999999)}"
+            narration = f"{kind} purchase"
+        else:
+            receiver = person(random.randint(10**7, 10**8)) if kind == "INTER" else person(random.choice(self.holders))
+            receiver_account = f"{random.randint(10**9, 10**10 - 1)}"
+            narration = f"Transfer to {receiver['name']}"
+        cba_ref = f"CBA{uuid.uuid4().hex[:16].upper()}" if cba_code == "true" else None
+        provider_ref = f"NCB{uuid.uuid4().hex[:16].upper()}" if outcome != "FAILED" else None
         self.w.add("legacy", (ref, kind, amount, local, updated, cba_code, message, provider_message,
                               "BAXI" if is_bill else "NCUBE", account_number(uid), bank,
-                              lat, lon, TENANT))
+                              lat, lon, TENANT, narration, receiver["name"] if receiver else None,
+                              receiver_account, cba_ref, provider_ref))
 
         if outcome in ("SUCCESS", "NULL_SUCCESS", "REVERSED"):
             created = ts + timedelta(seconds=random.randint(1, 4))
@@ -385,7 +418,8 @@ class Seeder:
                               "NCUBE", "REVERSED" if outcome == "REVERSED" else "SUCCESSFUL",
                               "INTER" if kind == "INTER" else "INTRA", "WITHDRAWAL", "TRANSFERS",
                               random.randint(1, 3) if random.random() < 0.04 else 0,
-                              created, finished))
+                              created, finished, sender["name"], receiver["name"] if receiver else None,
+                              narration, f"{random.randint(10**29, 10**30 - 1)}"))
 
         if is_bill and outcome in ("SUCCESS", "REVERSED"):
             failed = outcome == "REVERSED" and random.random() < 0.33
@@ -400,8 +434,10 @@ class Seeder:
         idx = PHASE_ORDER.index(phase)
         local = ts + WAT
         opened = local + timedelta(minutes=random.randint(3, 90)) if phase == "ACCOUNT_CREATED" else None
+        who = person(self.next_uid if idx >= USER_FROM else random.randint(9 * 10**8, 10**9))
         self.w.add("onboarding", (phase, NEXT_PHASE.get(phase), local,
-                                  local + timedelta(minutes=random.randint(1, 120)), opened, TENANT))
+                                  local + timedelta(minutes=random.randint(1, 120)), opened, TENANT,
+                                  who["first"], who["last"], who["email"], who["phone"]))
         if idx < USER_FROM:
             return
 
@@ -417,6 +453,9 @@ class Seeder:
             self.liveness_row(ts + timedelta(minutes=1), uid, passed=True, purpose="ONBOARDING")
         if phase == "ACCOUNT_CREATED":
             self.holders.append(uid)
+            self.w.add("accounts", (str(uuid.uuid4()), account_number(uid), who["name"].upper(), who["email"],
+                                    who["phone"], random.choice([None, None, None, "TIER_1", "TIER_3"]), "ACTIVE",
+                                    opened - WAT))
             if ts >= QUEST_LAUNCH and random.random() < 0.93:
                 self.enroll(uid, ts)
 
@@ -460,7 +499,8 @@ class Seeder:
         amount = REWARD_AMOUNT[kind]
         self.w.add("reward", (str(uuid.uuid4()), random.choice(self.enrollments), kind, amount, "CREDITED", ts))
         self.w.add("pt", (str(uuid.uuid4()), amount, "Dash MFB", "1000000001", f"QR{uuid.uuid4().hex[:24]}",
-                          "NCUBE", "SUCCESSFUL", "INTRA", "DEPOSIT", "QUEST_REWARD", 0, ts, ts))
+                          "NCUBE", "SUCCESSFUL", "INTRA", "DEPOSIT", "QUEST_REWARD", 0, ts, ts,
+                          "Dash Rewards", None, f"Quest reward: {kind}", None))
 
     def window(self, start, seconds, mult=1.0):
         """Generate every kind of event for [start, start + seconds)."""

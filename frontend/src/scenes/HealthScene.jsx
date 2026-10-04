@@ -1,7 +1,9 @@
 import { AlertTriangle, ScanFace, ShieldCheck } from 'lucide-react'
 import { motion } from 'motion/react'
 import AnimatedNumber from '../components/AnimatedNumber'
+import Drill from '../components/Drill'
 import { Eyebrow, Panel } from '../components/ui'
+import { list } from '../lib/explore'
 import { num, pct } from '../lib/format'
 
 const PRODUCT_LABELS = {
@@ -44,13 +46,15 @@ export default function HealthScene({ data }) {
             )}
             <Eyebrow>Failure rate · last {minutes} min</Eyebrow>
           </div>
-          <AnimatedNumber
-            value={recent.failure_rate ?? 0}
-            format={(v) => (recent.failure_rate == null ? '—' : pct(v))}
-            className={`mt-3 block text-[clamp(48px,6vw,130px)] leading-none font-semibold tracking-[-0.04em] ${
-              alert || rising ? 'text-bad' : enough ? 'text-good' : 'text-muted'
-            }`}
-          />
+          <Drill to={list({ status: 'FAILED' })} className="-mx-2 px-2">
+            <AnimatedNumber
+              value={recent.failure_rate ?? 0}
+              format={(v) => (recent.failure_rate == null ? '—' : pct(v))}
+              className={`mt-3 block text-[clamp(48px,6vw,130px)] leading-none font-semibold tracking-[-0.04em] ${
+                alert || rising ? 'text-bad' : enough ? 'text-good' : 'text-muted'
+              }`}
+            />
+          </Drill>
           <div className="mt-4 text-[clamp(12px,0.95vw,20px)] text-muted">
             {enough ? (
               <>
@@ -88,7 +92,7 @@ export default function HealthScene({ data }) {
         <div className="mt-[4vh] flex flex-1 flex-col justify-around">
           {reasons.length === 0 && <div className="text-muted">No failures yet today</div>}
           {reasons.map((r, i) => (
-            <div key={r.reason}>
+            <Drill key={r.reason} to={list({ status: 'FAILED', reason: r.reason })} className="-mx-2 px-2 py-1">
               <div className="mb-2 flex items-end justify-between gap-4">
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="truncate text-[clamp(13px,1.05vw,22px)]">{r.reason}</span>
@@ -120,7 +124,7 @@ export default function HealthScene({ data }) {
                   transition={{ duration: 1.3, delay: 0.3 + i * 0.1, ease: EASE }}
                 />
               </div>
-            </div>
+            </Drill>
           ))}
         </div>
       </Panel>
@@ -168,13 +172,13 @@ function Rate({ rate, usual, count }) {
 
 function Row({ product: p }) {
   return (
-    <>
+    <Drill to={list({ kinds: [p.kind] })} className="contents">
       <span className="truncate">
         {PRODUCT_LABELS[p.kind] ?? p.kind}
         <span className="ml-2 text-muted">{num(p.count)}</span>
       </span>
       <Rate rate={p.failure_rate} usual={p.usual_failure_rate} count={p.count} />
       <Rate rate={p.reversal_rate} usual={p.usual_reversal_rate} count={p.count} />
-    </>
+    </Drill>
   )
 }

@@ -1,6 +1,7 @@
 import { motion } from 'motion/react'
 import { useMemo, useState } from 'react'
 import Backdrop from './components/Backdrop'
+import ExplorePanel from './components/ExplorePanel'
 import LoginScreen from './components/LoginScreen'
 import SceneDeck from './components/SceneDeck'
 import Ticker from './components/Ticker'
@@ -8,13 +9,18 @@ import TopBar from './components/TopBar'
 import { useIdleCursor } from './hooks/useIdleCursor'
 import { usePulse } from './hooks/usePulse'
 import { useSession } from './hooks/useSession'
+import { ExploreContext } from './lib/explore'
 import { needsAttention, topFor } from './lib/insights'
 import { alertScene, ATTENTION_BONUS_SECONDS, isShowable, scenes } from './scenes'
 
 export default function App() {
-  useIdleCursor()
   const session = useSession()
   const signedIn = session.status === 'in'
+  const [exploreOn, setExploreOn] = useState(false)
+  const [stack, setStack] = useState([])
+  const exploring = signedIn && session.canExplore && exploreOn
+  useIdleCursor(!exploring)
+  const explore = useMemo(() => ({ enabled: exploring, open: (to) => setStack([to]) }), [exploring])
   const { data, offline, clockOffset } = usePulse(signedIn, session.expired)
   const [sceneId, setSceneId] = useState(null)
   const alert = Boolean(data?.health?.alert)
@@ -36,14 +42,23 @@ export default function App() {
         clockOffset={clockOffset}
         username={signedIn ? session.username : null}
         isAdmin={signedIn && session.isAdmin}
+        canExplore={signedIn && session.canExplore}
+        exploring={exploring}
+        onToggleExplore={() => {
+          setExploreOn((v) => !v)
+          setStack([])
+        }}
         onSignOut={session.signOut}
       />
       {session.status === 'out' ? (
         <LoginScreen onSignIn={session.signIn} />
       ) : data ? (
         <>
-          <SceneDeck scenes={playlist} data={data} interrupt={alert} onSceneChange={setSceneId} />
+          <ExploreContext.Provider value={explore}>
+            <SceneDeck scenes={playlist} data={data} interrupt={alert} frozen={exploring} onSceneChange={setSceneId} />
+          </ExploreContext.Provider>
           <Ticker data={data} />
+          {exploring && <ExplorePanel stack={stack} setStack={setStack} />}
         </>
       ) : (
         <div className="grid flex-1 place-items-center">

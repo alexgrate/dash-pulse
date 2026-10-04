@@ -8,6 +8,8 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
+from .models import ExploreLog
+
 logger = logging.getLogger("pulse.auth")
 
 MAX_USER_FAILURES = 5
@@ -46,6 +48,7 @@ def session_payload(request):
         "authenticated": signed_in,
         "username": user.get_username() if signed_in else None,
         "is_admin": bool(signed_in and user.is_staff),
+        "can_explore": can_explore(user),
     }
 
 
@@ -54,6 +57,31 @@ def login_required_json(view):
     def wrapped(request, *args, **kwargs):
         if not request.user.is_authenticated:
             return JsonResponse({"error": "login_required"}, status=401)
+        return view(request, *args, **kwargs)
+
+    return wrapped
+
+
+EXPLORER_GROUP = "Explorer"
+
+
+def can_explore(user):
+    return bool(user.is_authenticated and user.is_active and user.groups.filter(name=EXPLORER_GROUP).exists())
+
+
+def explorer_required(view):
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "login_required"}, status=401)
+        if not can_explore(request.user):
+            return JsonResponse({"error": "forbidden"}, status=403)
+        ExploreLog.objects.create(
+            user=request.user,
+            path=request.path[:255],
+            query=request.META.get("QUERY_STRING", "")[:1000],
+            ip=client_ip(request) or None,
+        )
         return view(request, *args, **kwargs)
 
     return wrapped
@@ -102,4 +130,4 @@ def sign_out(request):
     if request.user.is_authenticated:
         logger.info("Logout: user=%s ip=%s", request.user.get_username(), client_ip(request))
     logout(request)
-    return JsonResponse({"authenticated": False, "username": None, "is_admin": False})
+    return JsonResponse({"authenticated": False, "username": None, "is_admin": False, "can_explore": False})

@@ -8,7 +8,7 @@ function useHold(active) {
   }, [active])
 }
 
-export default function ChartHover({ count, render, markers, className = '', children }) {
+export default function ChartHover({ count, render, markers, onPick, className = '', children }) {
   const ref = useRef(null)
   const [index, setIndex] = useState(null)
   const [flip, setFlip] = useState(false)
@@ -25,7 +25,13 @@ export default function ChartHover({ count, render, markers, className = '', chi
   const content = index == null ? null : render(index)
 
   return (
-    <div ref={ref} className={`relative ${className}`} onMouseMove={move} onMouseLeave={() => setIndex(null)}>
+    <div
+      ref={ref}
+      className={`relative ${onPick ? 'cursor-pointer' : ''} ${className}`}
+      onMouseMove={move}
+      onMouseLeave={() => setIndex(null)}
+      onClick={onPick && index != null ? () => onPick(index) : undefined}
+    >
       {children}
       {index != null && (
         <>

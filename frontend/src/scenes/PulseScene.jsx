@@ -2,19 +2,22 @@ import AnimatedNumber from '../components/AnimatedNumber'
 import Delta from '../components/Delta'
 import HourlyChart from '../components/HourlyChart'
 import { Target } from 'lucide-react'
+import Drill from '../components/Drill'
 import { Eyebrow, Panel } from '../components/ui'
+import { list, useExplore } from '../lib/explore'
 import { naira, num, pct } from '../lib/format'
 
 export default function PulseScene({ data }) {
   const { today, yesterday } = data.transactions
   const users = data.active_users
+  const { enabled, open } = useExplore()
   const forecast = data.intelligence?.forecast
   const typical = data.intelligence?.typical
 
   return (
     <div className="grid h-full grid-cols-12 grid-rows-[minmax(0,1fr)] gap-[2.5vw]">
       <div className="col-span-5 flex min-h-0 flex-col justify-center gap-[3.5vh]">
-        <div>
+        <Drill to={list()} className="-m-3 p-3">
           <Eyebrow>Transactions today</Eyebrow>
           <AnimatedNumber
             value={today.count}
@@ -38,14 +41,14 @@ export default function PulseScene({ data }) {
               )}
             </div>
           )}
-        </div>
+        </Drill>
 
         <div className="grid grid-cols-2 gap-[1vw]">
-          <Stat label="Value moved · all products" delay={0.15}>
+          <Stat label="Value moved · all products" delay={0.15} to={list({ status: 'SUCCESS' })}>
             <AnimatedNumber value={today.value} format={naira} />
             <Delta today={today.value} yesterday={yesterday.value} label="vs yesterday" />
           </Stat>
-          <Stat label="Success rate" delay={0.25}>
+          <Stat label="Success rate" delay={0.25} to={list({ status: 'SUCCESS' })}>
             <AnimatedNumber
               value={today.success_rate ?? 0}
               format={(v) => (today.success_rate == null ? '—' : pct(v))}
@@ -55,7 +58,7 @@ export default function PulseScene({ data }) {
             />
             <span className="text-[clamp(12px,0.95vw,20px)] text-muted">yesterday {pct(yesterday.success_rate)}</span>
           </Stat>
-          <Stat label="Failed" delay={0.35}>
+          <Stat label="Failed" delay={0.35} to={list({ status: 'FAILED' })}>
             <AnimatedNumber value={today.failed} />
             <Delta today={today.failed} yesterday={yesterday.failed} invert label="vs yesterday" />
           </Stat>
@@ -94,6 +97,7 @@ export default function PulseScene({ data }) {
             yesterday={data.hourly.yesterday}
             hourNow={data.hour_now}
             typical={typical}
+            onPick={enabled ? (h) => h <= data.hour_now && open(list({ hour: h })) : undefined}
           />
         </div>
         <div className="text-[clamp(11px,0.85vw,17px)] text-muted">
@@ -104,13 +108,15 @@ export default function PulseScene({ data }) {
   )
 }
 
-function Stat({ label, delay, children }) {
+function Stat({ label, delay, to, children }) {
   const [value, sub] = children
   return (
     <Panel delay={delay}>
-      <Eyebrow>{label}</Eyebrow>
-      <div className="mt-1 text-[clamp(22px,min(2.6vw,4.6vh),56px)] font-semibold tracking-tight">{value}</div>
-      <div className="mt-1">{sub}</div>
+      <Drill to={to} className="-m-2 p-2">
+        <Eyebrow>{label}</Eyebrow>
+        <div className="mt-1 text-[clamp(22px,min(2.6vw,4.6vh),56px)] font-semibold tracking-tight">{value}</div>
+        <div className="mt-1">{sub}</div>
+      </Drill>
     </Panel>
   )
 }

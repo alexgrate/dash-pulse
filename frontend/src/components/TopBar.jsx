@@ -1,4 +1,4 @@
-import { Activity, LogOut, Siren, Users, WifiOff } from 'lucide-react'
+import { Activity, LogOut, ScanSearch, Siren, Users, WifiOff } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useClock } from '../hooks/useClock'
 import { InsightIcon, TONES } from '../lib/insights'
@@ -12,6 +12,9 @@ export default function TopBar({
   clockOffset = 0,
   username = null,
   isAdmin = false,
+  canExplore = false,
+  exploring = false,
+  onToggleExplore,
   onSignOut,
 }) {
   const now = new Date(useClock().getTime() + clockOffset)
@@ -35,6 +38,20 @@ export default function TopBar({
       </div>
 
       <div className="flex shrink-0 items-center gap-[2vw]">
+        {canExplore && (
+          <button
+            type="button"
+            onClick={onToggleExplore}
+            className={`flex items-center gap-2 rounded-full px-4 py-2 text-[clamp(12px,0.9vw,17px)] font-medium transition ${
+              exploring
+                ? 'bg-brand text-white ring-2 ring-brand-soft/60'
+                : 'border border-white/10 text-muted hover:border-brand-soft/40 hover:text-slate-100'
+            }`}
+          >
+            <ScanSearch className="size-[1.1em]" />
+            {exploring ? 'Exploring · click any number' : 'Explore'}
+          </button>
+        )}
         {alert && (
           <span className="flex animate-pulse items-center gap-2 rounded-full bg-bad/15 px-3 py-1 text-[clamp(12px,0.9vw,18px)] font-semibold tracking-[0.15em] text-bad uppercase">
             <Siren className="size-[1.1em]" /> Alert

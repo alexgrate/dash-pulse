@@ -1,7 +1,9 @@
 import { Landmark, ShieldCheck, Smartphone } from 'lucide-react'
 import { motion } from 'motion/react'
 import AnimatedNumber from '../components/AnimatedNumber'
+import Drill from '../components/Drill'
 import { Eyebrow, Panel } from '../components/ui'
+import { list } from '../lib/explore'
 import { naira, num, pct } from '../lib/format'
 import { InsightIcon, topFor, TONES } from '../lib/insights'
 
@@ -47,7 +49,7 @@ export default function BanksScene({ data }) {
         <div className="flex min-h-0 flex-1 flex-col justify-around">
           {items.length === 0 && <div className="text-muted">No transfers to other banks yet today</div>}
           {items.map((bank, i) => (
-            <div key={bank.key}>
+            <Drill key={bank.key} to={list({ kinds: ['INTER'], bank: bank.bank })} className="-mx-2 px-2 py-1">
               <div className="grid grid-cols-[1fr_auto_auto] items-baseline gap-x-[1.6vw]">
                 <span className="flex min-w-0 items-baseline gap-3">
                   <span className="truncate text-[clamp(13px,1.1vw,23px)]">{bank.bank}</span>
@@ -76,7 +78,7 @@ export default function BanksScene({ data }) {
                   transition={{ duration: 1.3, delay: 0.3 + i * 0.08, ease: EASE }}
                 />
               </div>
-            </div>
+            </Drill>
           ))}
         </div>
       </Panel>

@@ -19,6 +19,16 @@ CREATE TABLE `dashmfb-mcs`.DashMFB_Transactions (
   CBA_RESPONSE_CODE VARCHAR(10),
   CBA_MESSAGE LONGTEXT,
   PROVIDER_RESPONSE_MESSAGE LONGTEXT,
+  NARRATION LONGTEXT,
+  BENEFICIARY_NAME VARCHAR(150),
+  BENEFICIARY_ACCOUNT VARCHAR(20),
+  CBA_REFERENCE VARCHAR(100),
+  PROVIDER_REFERENCE VARCHAR(100),
+  PROVIDER_RESPONSE_CODE VARCHAR(20),
+  BENEFICIARY_BANK_CODE VARCHAR(10),
+  REVERSAL_RESPONSE VARCHAR(20),
+  REVERSAL_RESPONSE_MESSAGE LONGTEXT,
+  REVERSAL_DATETIME DATETIME,
   PROVIDER VARCHAR(50),
   ACCOUNT_NUMBER VARCHAR(20),
   BENEFICIARY_BANK_NAME VARCHAR(100),
@@ -47,7 +57,11 @@ CREATE TABLE `dashmfb-mcs`.DashMFB_UM_ONBOARDING_PROCESS (
   DATE_CREATED DATETIME,
   DATE_UPDATED DATETIME,
   ACCOUNT_OPENED_DATE DATETIME,
-  TENANT_ID VARCHAR(50)
+  TENANT_ID VARCHAR(50),
+  FIRSTNAME VARCHAR(100),
+  LASTNAME VARCHAR(100),
+  EMAIL VARCHAR(150),
+  PHONE_NUMBER VARCHAR(20)
 );
 
 CREATE TABLE `dashmfb-mcs`.LIVENESS_CHECK_LOG (
@@ -77,6 +91,12 @@ CREATE TABLE `dashmfb-cba-mcs`.payment_transactions (
   requery_count INT DEFAULT 0,
   created_at DATETIME,
   updated_at DATETIME,
+  source_account_name VARCHAR(150),
+  beneficiary_name VARCHAR(150),
+  narration TEXT,
+  session_id VARCHAR(40),
+  response_code VARCHAR(20),
+  cba_reference VARCHAR(100),
   INDEX (source_account),
   INDEX (status),
   INDEX (created_at)
@@ -156,4 +176,16 @@ CREATE TABLE `dashmfb-authservice`.ResetToken (
   generatedOn DATETIME,
   usedOn DATETIME,
   created_at DATETIME
+);
+
+CREATE TABLE `dashmfb-cba-mcs`.accounts (
+  id VARCHAR(36) PRIMARY KEY,
+  account_number VARCHAR(20),
+  account_name VARCHAR(150),
+  customer_email_address VARCHAR(150),
+  customer_phone_number VARCHAR(20),
+  account_kyc_tier_code VARCHAR(20),
+  status VARCHAR(20),
+  created_at DATETIME,
+  INDEX (account_number)
 );

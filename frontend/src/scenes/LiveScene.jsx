@@ -1,7 +1,9 @@
 import { CheckCircle2, Clock3, HeartPulse, RotateCcw, XCircle } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import AnimatedNumber from '../components/AnimatedNumber'
+import Drill from '../components/Drill'
 import { Eyebrow, Panel } from '../components/ui'
+import { list, tx, useExplore } from '../lib/explore'
 import { useClock } from '../hooks/useClock'
 import { lagosMs, useLive } from '../hooks/useLive'
 import { naira, num, pct } from '../lib/format'
@@ -50,6 +52,7 @@ function heartbeat(silence, typicalPerHour) {
 
 export default function LiveScene({ data }) {
   const { live, offset, failing } = useLive()
+  const { enabled, open } = useExplore()
   const now = useClock().getTime() + offset
   const typicalPerHour = data.intelligence?.typical?.hourly_median?.[data.hour_now]
   const silence = live?.last_at ? (now - lagosMs(live.last_at)) / 1000 : null
@@ -80,7 +83,12 @@ export default function LiveScene({ data }) {
           <ul className="flex flex-col gap-[1vh]">
             <AnimatePresence initial={false}>
               {live?.feed.map((t) => (
-                <FeedRow key={t.id} item={t} seconds={(now - lagosMs(t.at)) / 1000} />
+                <FeedRow
+                  key={t.id}
+                  item={t}
+                  seconds={(now - lagosMs(t.at)) / 1000}
+                  onOpen={enabled ? () => open(tx(t.id)) : undefined}
+                />
               ))}
             </AnimatePresence>
           </ul>
@@ -109,7 +117,7 @@ export default function LiveScene({ data }) {
   )
 }
 
-function FeedRow({ item, seconds }) {
+function FeedRow({ item, seconds, onOpen }) {
   const o = OUTCOMES[item.outcome] ?? OUTCOMES.PENDING
   const Icon = o.icon
   const fresh = seconds < 20
@@ -120,7 +128,8 @@ function FeedRow({ item, seconds }) {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.7, ease: EASE }}
-      className={`flex items-center gap-[1vw] rounded-2xl border px-[1.2vw] py-[1.1vh] transition-colors duration-[2000ms] ${
+      onClick={onOpen}
+      className={`${onOpen ? 'cursor-pointer hover:border-brand-soft/60' : ''} flex items-center gap-[1vw] rounded-2xl border px-[1.2vw] py-[1.1vh] transition-colors duration-[2000ms] ${
         fresh ? 'border-brand-soft/40 bg-brand/30' : 'border-white/[0.05] bg-white/[0.02]'
       }`}
     >
@@ -199,7 +208,11 @@ function WindowPanel({ live }) {
       </div>
       <div className="mt-[2vh] grid grid-cols-2 gap-x-[1.5vw] gap-y-[1vh] text-[clamp(12px,0.95vw,20px)]">
         {parts.map((p) => (
-          <div key={p.key} className="flex items-center justify-between gap-3">
+          <Drill
+            key={p.key}
+            to={list({ status: p.key })}
+            className="-mx-1 flex items-center justify-between gap-3 px-1"
+          >
             <span className="flex items-center gap-2 text-muted">
               <span className="size-2.5 rounded-full" style={{ background: p.bar }} />
               {p.label}
@@ -208,7 +221,7 @@ function WindowPanel({ live }) {
               {num(p.n)}
               <span className="ml-2 text-muted">{total ? pct(p.n / total, 0) : ''}</span>
             </span>
-          </div>
+          </Drill>
         ))}
       </div>
     </Panel>

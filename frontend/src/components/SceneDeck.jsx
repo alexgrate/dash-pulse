@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 
 const EASE = [0.16, 1, 0.3, 1]
 
-export default function SceneDeck({ scenes, data, interrupt = false, onSceneChange }) {
+export default function SceneDeck({ scenes, data, interrupt = false, frozen = false, onSceneChange }) {
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
   const [held, setHeld] = useState(false)
@@ -29,13 +29,14 @@ export default function SceneDeck({ scenes, data, interrupt = false, onSceneChan
   }, [])
 
   useEffect(() => {
-    if (paused || held) return
+    if (paused || held || frozen) return
     const id = setTimeout(() => setIndex((current + 1) % scenes.length), scene.seconds * 1000)
     return () => clearTimeout(id)
-  }, [current, paused, held, scene.seconds, scenes.length])
+  }, [current, paused, held, frozen, scene.seconds, scenes.length])
 
   useEffect(() => {
     const onKey = (e) => {
+      if (e.target.closest?.('input, textarea, select, [role="dialog"]')) return
       if (e.key === 'ArrowRight') setIndex((i) => (i + 1) % scenes.length)
       if (e.key === 'ArrowLeft') setIndex((i) => (i - 1 + scenes.length) % scenes.length)
       if (e.key === ' ') setPaused((p) => !p)
@@ -46,7 +47,12 @@ export default function SceneDeck({ scenes, data, interrupt = false, onSceneChan
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <SceneRail scenes={scenes} index={current} paused={paused || held} />
+      <SceneRail
+        scenes={scenes}
+        index={current}
+        paused={paused || held || frozen}
+        onSelect={frozen ? setIndex : null}
+      />
       <div className="relative min-h-0 flex-1">
         <AnimatePresence mode="wait">
           <motion.section
@@ -65,11 +71,15 @@ export default function SceneDeck({ scenes, data, interrupt = false, onSceneChan
   )
 }
 
-function SceneRail({ scenes, index, paused }) {
+function SceneRail({ scenes, index, paused, onSelect }) {
   return (
     <div className="flex gap-3 px-[3vw] pt-[3vh]">
       {scenes.map((s, i) => (
-        <div key={s.id} className="flex-1">
+        <div
+          key={s.id}
+          className={`flex-1 ${onSelect ? 'cursor-pointer' : ''}`}
+          onClick={onSelect ? () => onSelect(i) : undefined}
+        >
           <div
             className={`mb-2 text-[clamp(10px,0.75vw,15px)] font-medium tracking-[0.22em] uppercase transition-colors duration-700 ${
               s.id === 'alert' ? 'text-bad' : i === index ? 'text-slate-100' : 'text-muted/50'

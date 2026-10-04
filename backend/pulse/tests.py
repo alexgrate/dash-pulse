@@ -341,3 +341,57 @@ class TrendTests(SimpleTestCase):
         s = compare(series, "transactions")
         self.assertEqual(s["this_week"], 100)
         self.assertEqual(s["vs_month_ago"], 0)
+
+
+class ExploreAccessTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth.models import Group
+        from django.http import JsonResponse
+
+        from .auth import EXPLORER_GROUP, explorer_required
+
+        self.group = Group.objects.create(name=EXPLORER_GROUP)
+        self.user = get_user_model().objects.create_user("md", password="correct-horse-battery-staple")
+        self.view = explorer_required(lambda request: JsonResponse({"ok": True}))
+
+    def call(self):
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/api/explore/transactions?status=FAILED")
+        request.user = self.user
+        request.META["REMOTE_ADDR"] = "10.0.0.5"
+        return self.view(request)
+
+    def test_only_explorers_get_in_and_every_view_is_logged(self):
+        from .models import ExploreLog
+
+        self.assertEqual(self.call().status_code, 403)
+        self.assertEqual(ExploreLog.objects.count(), 0)
+        self.user.groups.add(self.group)
+        self.assertEqual(self.call().status_code, 200)
+        log = ExploreLog.objects.get()
+        self.assertEqual((log.user, log.query, log.ip), (self.user, "status=FAILED", "10.0.0.5"))
+
+    def test_admin_alone_cannot_explore(self):
+        self.user.is_staff = self.user.is_superuser = True
+        self.user.save()
+        self.assertEqual(self.call().status_code, 403)
+
+
+class ExploreFilterTests(SimpleTestCase):
+    row = {"id": 1, "at": "2026-10-04T10:15:00", "kind": "INTER", "amount": 5000.0, "account": "2000000001",
+           "beneficiary": "Ada Bello", "bank": "OPay", "reference": "DMFB123", "outcome": "FAILED",
+           "reason": "Insufficient funds", "reason_kind": "customer"}
+
+    def q(self, **kw):
+        base = {"status": None, "kinds": set(), "bank": None, "reason": None, "hour": None, "search": ""}
+        return {**base, **kw}
+
+    def test_filters_match_and_reject(self):
+        from .explore import matches
+        self.assertTrue(matches(self.row, self.q(status="FAILED", kinds={"INTER"}, bank="OPAY", hour=10)))
+        self.assertTrue(matches(self.row, self.q(reason="Insufficient funds", search="ada")))
+        self.assertFalse(matches(self.row, self.q(status="SUCCESS")))
+        self.assertFalse(matches(self.row, self.q(kinds={"Airtime"})))
+        self.assertFalse(matches(self.row, self.q(hour=11)))
+        self.assertFalse(matches(self.row, self.q(bank="GTBank")))

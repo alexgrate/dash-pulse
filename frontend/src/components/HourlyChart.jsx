@@ -21,7 +21,7 @@ function bandPath(high, low, max) {
   return `${top} ${bottom} Z`
 }
 
-export default function HourlyChart({ today, yesterday, hourNow, typical = null }) {
+export default function HourlyChart({ today, yesterday, hourNow, typical = null, onPick }) {
   const complete = today.slice(0, hourNow)
   const scale = typical ? [...complete, ...typical.hourly_high] : [...complete, ...yesterday]
   const max = Math.max(1, ...scale) * 1.15
@@ -75,7 +75,7 @@ export default function HourlyChart({ today, yesterday, hourNow, typical = null 
   ]
 
   return (
-    <ChartHover count={24} render={tip} markers={markers} className="size-full">
+    <ChartHover count={24} render={tip} markers={markers} onPick={onPick} className="size-full">
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="size-full overflow-visible">
         <defs>
           <linearGradient id="todayFill" x1="0" x2="0" y1="0" y2="1">

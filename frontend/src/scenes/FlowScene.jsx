@@ -2,7 +2,9 @@ import { ArrowLeftRight, Dices, Gift, Receipt, Repeat, Smartphone, UserPlus } fr
 import { motion } from 'motion/react'
 import AnimatedNumber from '../components/AnimatedNumber'
 import Delta from '../components/Delta'
+import Drill from '../components/Drill'
 import { Eyebrow, Panel } from '../components/ui'
+import { KIND_GROUPS, list } from '../lib/explore'
 import { naira, num } from '../lib/format'
 import { versus } from '../lib/insights'
 
@@ -32,7 +34,7 @@ export default function FlowScene({ data }) {
             const Icon = style.icon
             const share = g.count / total
             return (
-              <div key={g.group}>
+              <Drill key={g.group} to={list({ kinds: KIND_GROUPS[g.group] })} className="-mx-2 px-2 py-1">
                 <div className="mb-3 flex items-end justify-between">
                   <div className="flex items-center gap-3 text-[clamp(14px,1.25vw,26px)]">
                     <Icon className="size-[1.1em]" style={{ color: style.color }} />
@@ -52,7 +54,7 @@ export default function FlowScene({ data }) {
                     transition={{ duration: 1.4, delay: 0.3 + i * 0.12, ease: [0.16, 1, 0.3, 1] }}
                   />
                 </div>
-              </div>
+              </Drill>
             )
           })}
         </div>

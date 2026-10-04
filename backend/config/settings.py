@@ -183,3 +183,5 @@ LOGGING = {
     "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "plain"}},
     "loggers": {"pulse": {"handlers": ["console"], "level": "INFO", "propagate": False}},
 }
+
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
