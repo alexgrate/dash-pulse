@@ -7,30 +7,30 @@ NOT_RECORDED = "No reason recorded"
 
 RULES = [
     (r"insufficient (funds|balance)", "Insufficient funds", "customer"),
-    (r"account on pnd|post.?no.?debit", "Account restricted (PND)", "account"),
+    (r"account on pnd|post.?no.?debit", "Customer's account is frozen", "account"),
     (r"debit limit|transfer limit|limit exceeded", "Transfer limit exceeded", "customer"),
-    (r"invalid (virtual )?account|unknown bank|invalid beneficiary", "Invalid beneficiary account", "customer"),
-    (r"beneficiary institution not available|bank not available|institution not available", "Beneficiary bank not available", "system"),
-    (r"timed? ?out|timeout", "Timed out at destination", "system"),
-    (r"http error|connection|service unavailable", "Connection error to provider", "system"),
-    (r"request in progress|in progress|pending", "Stuck in progress at provider", "system"),
-    (r"invalid amount|invalid json|must not be blank|format error|validation", "Request rejected (app/validation)", "system"),
-    (r"do not honou?r", "Declined by destination bank", "system"),
+    (r"invalid (virtual )?account|unknown bank|invalid beneficiary", "Wrong account number entered", "customer"),
+    (r"beneficiary institution not available|bank not available|institution not available", "Receiving bank is down", "system"),
+    (r"timed? ?out|timeout", "Receiving bank took too long to reply", "system"),
+    (r"http error|connection|service unavailable", "Could not reach our payment partner", "system"),
+    (r"request in progress|in progress|pending", "Waiting for payment partner to confirm", "system"),
+    (r"invalid amount|invalid json|must not be blank|format error|validation", "Our app sent a faulty request", "system"),
+    (r"do not honou?r", "Receiving bank refused it", "system"),
 ]
 
 COMPILED = [(re.compile(p, re.I), label, kind) for p, label, kind in RULES]
 
 HINTS = {
-    "Insufficient funds": "Customer-side, not a system fault.",
-    "Account restricted (PND)": "These accounts are on Post-No-Debit, usually KYC or compliance holds ops can review.",
-    "Transfer limit exceeded": "Customers are hitting daily or per-transaction limits. Worth reviewing limit tiers.",
-    "Invalid beneficiary account": "Customers are entering wrong account numbers.",
-    "Beneficiary bank not available": "Points to a destination bank or NIP outage.",
-    "Timed out at destination": "Points to switch or destination latency.",
-    "Connection error to provider": "The link to the payment provider is failing.",
-    "Stuck in progress at provider": "The provider has not confirmed these yet.",
-    "Request rejected (app/validation)": "The app is sending requests the provider rejects. Likely an app bug.",
-    "Declined by destination bank": "Destination banks are declining.",
+    "Insufficient funds": "Customers did not have enough money. Not a fault at Dash.",
+    "Customer's account is frozen": "These accounts are blocked from sending money (Post-No-Debit), usually a KYC or compliance hold that ops can review.",
+    "Transfer limit exceeded": "Customers are hitting their daily or per-transfer limit. Worth reviewing the limits.",
+    "Wrong account number entered": "Customers typed an account number that does not exist.",
+    "Receiving bank is down": "The other bank, or the NIP network between banks, is having an outage.",
+    "Receiving bank took too long to reply": "The other bank or the network between banks is slow right now.",
+    "Could not reach our payment partner": "Dash could not get through to the company that carries our transfers to other banks. Usually their outage or our network link, and the tech team should check it now.",
+    "Waiting for payment partner to confirm": "Our payment partner has not yet said whether these went through.",
+    "Our app sent a faulty request": "The Dash app sent something our payment partner rejected. Likely a bug for the tech team.",
+    "Receiving bank refused it": "The other bank declined these transfers.",
     NOT_RECORDED: "Failures saved without any message. A logging gap worth raising.",
 }
 

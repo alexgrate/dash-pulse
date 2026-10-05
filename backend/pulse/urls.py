@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import auth, explore, views
+from . import accounts, auth, explore, views
 
 urlpatterns = [
     path("pulse", views.pulse),
@@ -11,4 +11,7 @@ urlpatterns = [
     path("auth/session", auth.session),
     path("auth/login", auth.sign_in),
     path("auth/logout", auth.sign_out),
+    path("auth/forgot", accounts.forgot),
+    path("auth/check-link", accounts.check_link),
+    path("auth/set-password", accounts.set_password),
 ]

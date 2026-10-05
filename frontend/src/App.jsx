@@ -4,6 +4,7 @@ import Backdrop from './components/Backdrop'
 import ExplorePanel from './components/ExplorePanel'
 import LoginScreen from './components/LoginScreen'
 import SceneDeck from './components/SceneDeck'
+import SetPasswordScreen, { readSetupLink } from './components/SetPasswordScreen'
 import Ticker from './components/Ticker'
 import TopBar from './components/TopBar'
 import { useIdleCursor } from './hooks/useIdleCursor'
@@ -16,6 +17,8 @@ import { alertScene, ATTENTION_BONUS_SECONDS, isShowable, scenes } from './scene
 export default function App() {
   const session = useSession()
   const signedIn = session.status === 'in'
+  const [setupLink, setSetupLink] = useState(readSetupLink)
+  const [notice, setNotice] = useState('')
   const [exploreOn, setExploreOn] = useState(false)
   const [stack, setStack] = useState([])
   const exploring = signedIn && session.canExplore && exploreOn
@@ -24,6 +27,13 @@ export default function App() {
   const { data, offline, clockOffset } = usePulse(signedIn, session.expired)
   const [sceneId, setSceneId] = useState(null)
   const alert = Boolean(data?.health?.alert)
+
+  async function finishSetup(message) {
+    window.history.replaceState(null, '', window.location.pathname)
+    setSetupLink(null)
+    setNotice(message)
+    if (message && signedIn) await session.signOut()
+  }
 
   const playlist = useMemo(() => {
     const base = scenes
@@ -50,8 +60,10 @@ export default function App() {
         }}
         onSignOut={session.signOut}
       />
-      {session.status === 'out' ? (
-        <LoginScreen onSignIn={session.signIn} />
+      {setupLink ? (
+        <SetPasswordScreen link={setupLink} onDone={finishSetup} />
+      ) : session.status === 'out' ? (
+        <LoginScreen onSignIn={session.signIn} notice={notice} />
       ) : data ? (
         <>
           <ExploreContext.Provider value={explore}>

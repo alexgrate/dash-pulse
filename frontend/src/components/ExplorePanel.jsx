@@ -369,10 +369,15 @@ function Section({ title, children }) {
 }
 
 function Field({ label, value, mono = false }) {
+  const missing = value == null || String(value).trim() === '' || String(value).trim() === '-'
   return (
     <div className="flex justify-between gap-6 py-1">
       <span className="text-muted">{label}</span>
-      <span className={`text-right break-all text-slate-100 ${mono ? 'font-mono text-xs' : ''}`}>{value ?? '—'}</span>
+      {missing ? (
+        <span className="text-right text-muted/60 italic">Not recorded</span>
+      ) : (
+        <span className={`text-right break-all text-slate-100 ${mono ? 'font-mono text-xs' : ''}`}>{value}</span>
+      )}
     </div>
   )
 }

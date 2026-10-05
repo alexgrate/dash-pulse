@@ -185,3 +185,10 @@ LOGGING = {
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+MS_GRAPH_TENANT_ID = os.environ.get("MS_GRAPH_TENANT_ID", "")
+MS_GRAPH_CLIENT_ID = os.environ.get("MS_GRAPH_CLIENT_ID", "")
+MS_GRAPH_CLIENT_SECRET = os.environ.get("MS_GRAPH_CLIENT_SECRET", "")
+MS_GRAPH_SENDER = os.environ.get("MS_GRAPH_SENDER", "")
+PULSE_PUBLIC_URL = os.environ.get("PULSE_PUBLIC_URL", "").rstrip("/")
+PASSWORD_RESET_TIMEOUT = 24 * 60 * 60

@@ -24,7 +24,7 @@ TYPICAL = {
 
 BASELINES = {
     "typical": TYPICAL,
-    "reasons": {"Insufficient funds": 0.6, "Beneficiary bank not available": 0.1},
+    "reasons": {"Insufficient funds": 0.6, "Receiving bank is down": 0.1},
     "products": {"Utilities": {"count": 200, "failure_rate": 0.05, "reversal_rate": 0.08}},
     "liveness": 0.25,
     "rewards": {"per_tx": 1.0, "value_per_tx": 100},
@@ -42,7 +42,7 @@ PAYLOAD = {
         "baseline": {"failure_rate": 0.15},
         "reasons": [
             {"reason": "Insufficient funds", "kind": "customer", "today": 30, "recent": 2},
-            {"reason": "Beneficiary bank not available", "kind": "system", "today": 5, "recent": 1},
+            {"reason": "Receiving bank is down", "kind": "system", "today": 5, "recent": 1},
         ],
         "products": [{"kind": "Utilities", "count": 40, "failure_rate": 0.05, "reversal_rate": 0.08}],
         "liveness": {"failure_rate": 0.25},
@@ -116,11 +116,11 @@ class InsightTests(SimpleTestCase):
     def test_reason_shift_is_explained(self):
         reasons = [
             {"reason": "Insufficient funds", "kind": "customer", "today": 15, "recent": 1},
-            {"reason": "Beneficiary bank not available", "kind": "system", "today": 25, "recent": 10},
+            {"reason": "Receiving bank is down", "kind": "system", "today": 25, "recent": 10},
         ]
         items = run(health__reasons=reasons)["items"]
-        shift = next(i for i in items if i["id"] == "reason-Beneficiary bank not available")
-        self.assertIn("NIP outage", shift["detail"])
+        shift = next(i for i in items if i["id"] == "reason-Receiving bank is down")
+        self.assertIn("NIP network", shift["detail"])
 
     def test_reversal_jump_is_flagged(self):
         products = [{"kind": "Utilities", "count": 40, "failure_rate": 0.05, "reversal_rate": 0.25}]
@@ -151,7 +151,7 @@ class InsightTests(SimpleTestCase):
     def test_pnd_failures_are_called_out(self):
         reasons = [
             {"reason": "Insufficient funds", "kind": "customer", "today": 20, "recent": 1},
-            {"reason": "Account restricted (PND)", "kind": "account", "today": 15, "recent": 1},
+            {"reason": "Customer's account is frozen", "kind": "account", "today": 15, "recent": 1},
         ]
         self.assertIn("reasons-pnd", ids(run(health__reasons=reasons)))
 
@@ -395,3 +395,91 @@ class ExploreFilterTests(SimpleTestCase):
         self.assertFalse(matches(self.row, self.q(kinds={"Airtime"})))
         self.assertFalse(matches(self.row, self.q(hour=11)))
         self.assertFalse(matches(self.row, self.q(bank="GTBank")))
+
+
+class PasswordEmailTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.user = get_user_model().objects.create_user("ops", email="ops@dash-mfb.com", password="old-Password-2026!")
+        self.sent = []
+        sender = patch("pulse.mailer.send", side_effect=lambda to, subject, html: self.sent.append((to, html)))
+        sender.start()
+        self.addCleanup(sender.stop)
+
+    def post(self, url, body):
+        return self.client.post(url, json.dumps(body), content_type="application/json")
+
+    def link_parts(self):
+        html = self.sent[-1][1]
+        tail = html.split("#/set-password/")[1].split('"')[0]
+        uid, token = tail.split("/")
+        return {"uid": uid, "token": token}
+
+    def test_forgot_sends_link_and_link_sets_password_once(self):
+        r = self.post("/api/auth/forgot", {"email": "OPS@dash-mfb.com"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.sent[0][0], "ops@dash-mfb.com")
+        parts = self.link_parts()
+        self.assertEqual(self.post("/api/auth/check-link", parts).json(), {"valid": True, "username": "ops"})
+        r = self.post("/api/auth/set-password", {**parts, "password": "short"})
+        self.assertEqual(r.status_code, 400)
+        r = self.post("/api/auth/set-password", {**parts, "password": "brand-New-Password-77"})
+        self.assertEqual(r.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("brand-New-Password-77"))
+        self.assertFalse(self.post("/api/auth/check-link", parts).json()["valid"])
+        r = self.post("/api/auth/set-password", {**parts, "password": "another-New-Password-88"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_forgot_does_not_reveal_unknown_emails(self):
+        r = self.post("/api/auth/forgot", {"email": "nobody@dash-mfb.com"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json(), self.post("/api/auth/forgot", {"email": "ops@dash-mfb.com"}).json())
+        self.assertEqual(len(self.sent), 1)
+
+    def test_forgot_is_rate_limited(self):
+        for _ in range(6):
+            self.post("/api/auth/forgot", {"email": "ops@dash-mfb.com"})
+        self.assertEqual(len(self.sent), 3)
+
+    def test_disabled_users_get_nothing(self):
+        self.user.is_active = False
+        self.user.save()
+        self.post("/api/auth/forgot", {"email": "ops@dash-mfb.com"})
+        self.assertEqual(self.sent, [])
+
+    def test_tampered_link_is_rejected(self):
+        self.post("/api/auth/forgot", {"email": "ops@dash-mfb.com"})
+        parts = self.link_parts()
+        self.assertFalse(self.post("/api/auth/check-link", {**parts, "token": parts["token"] + "x"}).json()["valid"])
+        self.assertFalse(self.post("/api/auth/check-link", {"uid": "!!", "token": "x"}).json()["valid"])
+
+    def test_admin_creates_user_and_invite_is_sent(self):
+        admin_user = get_user_model().objects.create_superuser("boss", password="boss-Password-2026!")
+        self.client.force_login(admin_user)
+        r = self.client.post(
+            "/manage/auth/user/add/",
+            {"username": "newbie", "email": "newbie@dash-mfb.com", "first_name": "New", "last_name": "", "explore": "on"},
+        )
+        self.assertEqual(r.status_code, 302)
+        newbie = get_user_model().objects.get(username="newbie")
+        self.assertFalse(newbie.has_usable_password())
+        self.assertTrue(newbie.groups.filter(name="Explorer").exists())
+        self.assertEqual(self.sent[-1][0], "newbie@dash-mfb.com")
+        self.assertIn("newbie", self.sent[-1][1])
+
+    def test_admin_toggles_explore_and_manage_from_edit_page(self):
+        admin_user = get_user_model().objects.create_superuser("boss", password="boss-Password-2026!")
+        self.client.force_login(admin_user)
+        url = f"/manage/auth/user/{self.user.pk}/change/"
+        self.assertContains(self.client.get(url), "Explore access")
+        form = {"username": "ops", "email": "ops@dash-mfb.com", "first_name": "", "last_name": "", "is_active": "on"}
+        self.client.post(url, {**form, "explore": "on", "is_staff": "on"})
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.groups.filter(name="Explorer").exists())
+        self.assertTrue(self.user.is_staff and self.user.is_superuser)
+        self.client.post(url, form)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.groups.filter(name="Explorer").exists())
+        self.assertFalse(self.user.is_staff or self.user.is_superuser)
+        self.assertTrue(self.user.check_password("old-Password-2026!"))
