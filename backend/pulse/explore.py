@@ -59,7 +59,8 @@ def day_rows(day):
     rows = fetch(f"""
         SELECT l.ID AS id, l.CREATED AS created, l.TRANSACTION_TYPE AS kind, l.AMOUNT AS amount,
                l.ACCOUNT_NUMBER AS account, l.BENEFICIARY_BANK_NAME AS bank, l.BENEFICIARY_NAME AS beneficiary,
-               l.PAYMENT_REFERENCE AS reference,
+               l.PAYMENT_REFERENCE AS reference, l.BENEFICIARY_ACCOUNT AS beneficiary_account,
+               p.source_account_name AS sender,
                {OUTCOME_SQL} AS outcome, {REASON_SQL} AS message
         FROM {LEGACY} l
         LEFT JOIN {PAYMENTS} p
@@ -81,8 +82,14 @@ def day_rows(day):
             "outcome": r["outcome"],
             "reason": reason,
             "reason_kind": reason_kind,
+            "words": words(" ".join(str(v) for v in (
+                r["reference"], r["account"], r["beneficiary"], r["beneficiary_account"], r["sender"]) if v)),
         })
     return out
+
+
+def words(text):
+    return " ".join(text.lower().split())
 
 
 def matches(row, q):
@@ -96,10 +103,8 @@ def matches(row, q):
         return False
     if q["hour"] is not None and datetime.fromisoformat(row["at"]).hour != q["hour"]:
         return False
-    if q["search"]:
-        haystack = f"{row['reference']} {row['account']} {row['beneficiary']}".lower()
-        if q["search"] not in haystack:
-            return False
+    if q["search"] and not all(w in row["words"] for w in q["search"].split()):
+        return False
     return True
 
 
@@ -116,10 +121,11 @@ def transactions(request):
         "bank": g.get("bank") or None,
         "reason": g.get("reason") or None,
         "hour": parse_int(g.get("hour")),
-        "search": (g.get("search") or "").strip().lower(),
+        "search": words(g.get("search") or ""),
     }
     all_rows = day_rows(day)
     rows = sorted((r for r in all_rows if matches(r, q)), key=lambda r: (r["at"], r["id"]), reverse=True)
+    rows = [{k: v for k, v in r.items() if k != "words"} for r in rows]
 
     summary = {s.lower(): 0 for s in STATUSES}
     reasons = {}

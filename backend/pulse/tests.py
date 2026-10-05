@@ -381,7 +381,7 @@ class ExploreAccessTests(TestCase):
 class ExploreFilterTests(SimpleTestCase):
     row = {"id": 1, "at": "2026-10-04T10:15:00", "kind": "INTER", "amount": 5000.0, "account": "2000000001",
            "beneficiary": "Ada Bello", "bank": "OPay", "reference": "DMFB123", "outcome": "FAILED",
-           "reason": "Insufficient funds", "reason_kind": "customer"}
+           "reason": "Insufficient funds", "reason_kind": "customer", "words": "dmfb123 2000000001 ada bello"}
 
     def q(self, **kw):
         base = {"status": None, "kinds": set(), "bank": None, "reason": None, "hour": None, "search": ""}
@@ -395,6 +395,13 @@ class ExploreFilterTests(SimpleTestCase):
         self.assertFalse(matches(self.row, self.q(kinds={"Airtime"})))
         self.assertFalse(matches(self.row, self.q(hour=11)))
         self.assertFalse(matches(self.row, self.q(bank="GTBank")))
+
+    def test_search_ignores_spacing_case_and_word_order(self):
+        from .explore import matches, words
+        row = {**self.row, "words": words("DMFB9 0011273563 JAFAR  USMAN\u00a0 8020911442 Sebastine Agu")}
+        for typed in ("JAFAR USMAN", "usman jafar", " jafar  ", "sebastine", "8020911442"):
+            self.assertTrue(matches(row, self.q(search=words(typed))), typed)
+        self.assertFalse(matches(row, self.q(search=words("jafar bello"))))
 
 
 class PasswordEmailTests(TestCase):
