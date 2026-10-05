@@ -145,7 +145,7 @@ def transactions(request):
 def transaction(request, tx_id):
     rows = fetch(f"""
         SELECT l.*, {OUTCOME_SQL} AS outcome,
-               p.id AS p_id, p.status AS p_status, p.transfer_type AS p_transfer_type,
+               p.id AS p_id, p.status AS p_status, p.transfer_type AS p_transfer_type, p.provider AS p_provider,
                p.response_code AS p_response_code, p.requery_count AS p_requery_count,
                p.cba_reference AS p_cba_reference, p.session_id AS p_session_id,
                p.source_account_name AS p_source_account_name, p.beneficiary_name AS p_beneficiary_name,
@@ -243,7 +243,7 @@ def transaction(request, tx_id):
             "nip_session": r.get("p_session_id"),
         },
         "responses": {
-            "provider": r.get("PROVIDER"),
+            "provider": r.get("PROVIDER") or r.get("p_provider"),
             "core_banking_ok": r.get("CBA_RESPONSE_CODE"),
             "core_banking_message": r.get("CBA_MESSAGE"),
             "provider_code": r.get("PROVIDER_RESPONSE_CODE"),
