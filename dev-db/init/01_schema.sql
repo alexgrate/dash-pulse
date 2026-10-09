@@ -189,3 +189,18 @@ CREATE TABLE `dashmfb-cba-mcs`.accounts (
   created_at DATETIME,
   INDEX (account_number)
 );
+
+CREATE TABLE `dashmfb-cba-mcs`.webhook_events (
+  id VARCHAR(36) PRIMARY KEY,
+  provider VARCHAR(20) NOT NULL,
+  provider_ref VARCHAR(150) NOT NULL,
+  account_number VARCHAR(20),
+  status VARCHAR(20) NOT NULL DEFAULT 'PROCESSED',
+  raw_payload JSON,
+  processed_at DATETIME,
+  created_at DATETIME NOT NULL,
+  category VARCHAR(40),
+  transaction_date DATE,
+  INDEX (account_number),
+  INDEX (created_at)
+);

@@ -61,40 +61,43 @@ export default function LiveScene({ data }) {
 
   return (
     <div className="grid h-full grid-cols-12 grid-rows-[minmax(0,1fr)] gap-[2.5vw]">
-      <Panel className="relative col-span-7 flex min-h-0 flex-col overflow-hidden">
-        <div className="flex items-start justify-between">
-          <div>
-            <Eyebrow>Transactions as they happen</Eyebrow>
-            <div className="mt-1 text-[clamp(16px,1.4vw,30px)] font-medium">Live feed</div>
-          </div>
-          <span className="flex items-center gap-2 text-[clamp(11px,0.85vw,17px)] text-muted">
-            <span className="relative flex size-2.5">
-              <span
-                className={`absolute inline-flex size-full rounded-full opacity-75 ${failing ? 'bg-warn' : 'animate-ping bg-good'}`}
-              />
-              <span className={`relative inline-flex size-2.5 rounded-full ${failing ? 'bg-warn' : 'bg-good'}`} />
-            </span>
-            {failing ? 'Reconnecting…' : 'Updates every 5 seconds'}
-          </span>
-        </div>
-
-        <div className="relative mt-[2.5vh] min-h-0 flex-1 overflow-hidden">
-          {!live && <div className="text-muted">Listening…</div>}
-          <ul className="flex flex-col gap-[1vh]">
-            <AnimatePresence initial={false}>
-              {live?.feed.map((t) => (
-                <FeedRow
-                  key={t.id}
-                  item={t}
-                  seconds={(now - lagosMs(t.at)) / 1000}
-                  onOpen={enabled ? () => open(tx(t.id)) : undefined}
+      <div className="col-span-7 flex min-h-0 flex-col gap-[1.6vw]">
+        <Panel className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="flex items-start justify-between">
+            <div>
+              <Eyebrow>Transactions as they happen</Eyebrow>
+              <div className="mt-1 text-[clamp(16px,1.4vw,30px)] font-medium">Live feed</div>
+            </div>
+            <span className="flex items-center gap-2 text-[clamp(11px,0.85vw,17px)] text-muted">
+              <span className="relative flex size-2.5">
+                <span
+                  className={`absolute inline-flex size-full rounded-full opacity-75 ${failing ? 'bg-warn' : 'animate-ping bg-good'}`}
                 />
-              ))}
-            </AnimatePresence>
-          </ul>
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-ink/90 to-transparent" />
-        </div>
-      </Panel>
+                <span className={`relative inline-flex size-2.5 rounded-full ${failing ? 'bg-warn' : 'bg-good'}`} />
+              </span>
+              {failing ? 'Reconnecting…' : 'Updates every 5 seconds'}
+            </span>
+          </div>
+
+          <div className="relative mt-[2.5vh] min-h-0 flex-1 overflow-hidden">
+            {!live && <div className="text-muted">Listening…</div>}
+            <ul className="flex flex-col gap-[1vh]">
+              <AnimatePresence initial={false}>
+                {live?.feed.map((t) => (
+                  <FeedRow
+                    key={t.id}
+                    item={t}
+                    seconds={(now - lagosMs(t.at)) / 1000}
+                    onOpen={enabled ? () => open(tx(t.id)) : undefined}
+                  />
+                ))}
+              </AnimatePresence>
+            </ul>
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-ink/90 to-transparent" />
+          </div>
+        </Panel>
+        <TodayPanel data={data} />
+      </div>
 
       <div className="col-span-5 flex min-h-0 flex-col gap-[2.5vw]">
         <Panel className={`flex flex-1 flex-col justify-center border ${style.border}`} delay={0.15}>
@@ -170,6 +173,51 @@ function Ecg({ stroke, flat }) {
           transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
         />
       </svg>
+    </div>
+  )
+}
+
+function TodayPanel({ data }) {
+  const mix = data.mix ?? []
+  const within = mix.filter((g) => g.group === 'Within Dash').reduce((a, g) => a + g.value, 0)
+  const out = mix.filter((g) => g.group !== 'Within Dash').reduce((a, g) => a + g.value, 0)
+  const opened = data.new_accounts?.today ?? 0
+  const stuck = data.funnel?.today_stuck ?? 0
+  const moneyIn = data.money_in
+  return (
+    <Panel className="shrink-0 !py-[2vh]" delay={0.2}>
+      <Eyebrow>Today so far</Eyebrow>
+      <div className="mt-[1.2vh] grid grid-cols-5 gap-x-[1.6vw]">
+        <TodayFigure
+          label="Accounts opened"
+          value={num(opened)}
+          tone="text-good"
+          note="Finished signing up and got an account."
+        />
+        <TodayFigure
+          label="Stuck halfway"
+          value={num(stuck)}
+          tone="text-warn"
+          note="Started signing up today, not finished yet."
+        />
+        <TodayFigure
+          label="Money in"
+          value={moneyIn ? naira(moneyIn.value) : '—'}
+          note={moneyIn ? `${num(moneyIn.count)} transfers received from other banks.` : 'Not available right now.'}
+        />
+        <TodayFigure label="Money out" value={naira(out)} note="Sent to other banks, airtime, data and bills." />
+        <TodayFigure label="Within Dash" value={naira(within)} note="Moved between Dash accounts." />
+      </div>
+    </Panel>
+  )
+}
+
+function TodayFigure({ label, value, note, tone = 'text-slate-100' }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[clamp(11px,0.85vw,17px)] text-muted">{label}</div>
+      <div className={`tabular text-[clamp(20px,1.9vw,40px)] leading-tight font-semibold ${tone}`}>{value}</div>
+      <div className="text-[clamp(10px,0.72vw,14px)] leading-snug text-muted/75">{note}</div>
     </div>
   )
 }

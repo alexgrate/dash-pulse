@@ -16,6 +16,7 @@ Volumes, mixes and failure rates copy what discovery found in production
 Refuses to connect anywhere except localhost, so it can never write to a real server.
 """
 import argparse
+import json
 import math
 import os
 import random
@@ -155,7 +156,8 @@ LIVENESS_PURPOSE = {"PASSWORD_RESET": 16620, "DEVICE_CHANGE": 1681, "PIN_RESET":
 NOTIF_CHANNELS = {"EMAIL": 129662, "SMS": 66458, "PUSH": 1733}
 
 # Events per legacy transaction, from production row counts.
-PER_TX = {"login": 4.35, "reset": 3.2, "notif": 2.1, "liveness": 0.19, "reward": 0.95}
+PER_TX = {"login": 4.35, "reset": 3.2, "notif": 2.1, "liveness": 0.19, "reward": 0.95,
+          "inward": 0.4, "internal": 0.3}
 
 
 # ─── Tables ─────────────────────────────────────────────────────────
@@ -192,6 +194,9 @@ TABLES = {
                "id, customer_id, status, total_earned, enrolled_at, created_at"),
     "reward": ("`dashmfb-cba-mcs`.quest_reward_transactions",
                "id, enrollment_id, reward_type, amount, status, created_at"),
+    "webhook": ("`dashmfb-cba-mcs`.webhook_events",
+                "id, provider, provider_ref, account_number, status, raw_payload, processed_at, created_at, "
+                "category, transaction_date"),
 }
 BILLER_TABLES = ["`dashmfb-billspayment`.billers", "`dashmfb-billspayment`.biller_categories"]
 
@@ -502,6 +507,16 @@ class Seeder:
                           "NCUBE", "SUCCESSFUL", "INTRA", "DEPOSIT", "QUEST_REWARD", 0, ts, ts,
                           "Dash Rewards", None, f"Quest reward: {kind}", None))
 
+    def credit(self, ts, service):
+        if not self.holders:
+            return
+        amount = amount_for("INTER" if service == "INWARD" else "INTRA")
+        payload = {"drCr": "CR", "amount": amount, "service": service, "extraData": {},
+                   "narration": "Inward transfer" if service == "INWARD" else "Internal credit"}
+        ref = uuid.uuid4().hex
+        self.w.add("webhook", (str(uuid.uuid4()), "NCUBE", ref, account_number(random.choice(self.holders)),
+                               "PROCESSED", json.dumps(payload), ts, ts, "TRANSFERS", ts.date()))
+
     def window(self, start, seconds, mult=1.0):
         """Generate every kind of event for [start, start + seconds)."""
         base = tx_per_hour(start) * seconds / 3600 * mult
@@ -515,6 +530,8 @@ class Seeder:
             ("notifications", self.notification, base * PER_TX["notif"]),
             ("liveness", self.liveness, base * PER_TX["liveness"]),
             ("rewards", self.reward, base * PER_TX["reward"] * ramp),
+            ("money_in", lambda ts: self.credit(ts, "INWARD"), base * PER_TX["inward"]),
+            ("internal_credits", lambda ts: self.credit(ts, "INTERNAL"), base * PER_TX["internal"]),
         ]
         counts = {}
         for name, fn, lam in plan:

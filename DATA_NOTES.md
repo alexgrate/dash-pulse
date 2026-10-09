@@ -105,3 +105,7 @@ password, salt, BVN, NIN, *_IMAGE_PATH, names, phone, email, balances (without a
 - /api/explore/transactions/<id>: full detail — customer (name, phone, email, KYC tier from cba-mcs.accounts), beneficiary, all references, raw core-banking and provider responses, reversal, a timeline, and the customer's other transactions that day.
 - /api/explore/onboarding?phase=…&scope=today|30d: people stuck at a step, with name, phone, email and how long they have waited. BVN, NIN, document images and balances are never read.
 - Every explore request is written to the ExploreLog audit table (user, time, path, filters, IP), visible read-only under Manage users.
+
+## Money in
+
+Money in comes from `dashmfb-cba-mcs`.webhook_events, the notices NCUBE sends when an account is credited. Each row's `raw_payload` carries `drCr`, `amount` (naira) and `service`. Only `drCr = CR` with `service = INWARD` counts as money in: transfers from other banks. `INTERNAL` credits are left out because they include Dash's own settlement and treasury moves (single credits of hundreds of millions), not customer deposits. Repeated notices for one transfer share a `provider_ref` and are counted once. `created_at` is UTC.

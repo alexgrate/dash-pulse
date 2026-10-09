@@ -9,7 +9,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from django.db import connections
+from django.db import DatabaseError, connections
 
 from . import banks as bank_names
 from .geo import CITY_COORDS, NIGERIA_BOUNDS, nearest_city
@@ -25,6 +25,7 @@ PAYMENTS = "`dashmfb-cba-mcs`.payment_transactions"
 LOGINS = "`dashmfb-mcs`.UM_LOGIN_TRAIL"
 ONBOARDING = "`dashmfb-mcs`.DashMFB_UM_ONBOARDING_PROCESS"
 REWARDS = "`dashmfb-cba-mcs`.quest_reward_transactions"
+WEBHOOKS = "`dashmfb-cba-mcs`.webhook_events"
 LIVENESS = "`dashmfb-mcs`.LIVENESS_CHECK_LOG"
 
 RECENT_MINUTES = 15
@@ -230,6 +231,25 @@ def rewards(w_utc):
     }
 
 
+def money_in(w_utc):
+    try:
+        row = fetch(f"""
+            SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS value
+            FROM (
+                SELECT provider_ref,
+                       MAX(CAST(JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.amount')) AS DECIMAL(18,2))) AS amount
+                FROM {WEBHOOKS}
+                WHERE created_at >= %(today)s AND created_at < %(now)s
+                  AND JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.drCr')) = 'CR'
+                  AND JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.service')) = 'INWARD'
+                GROUP BY provider_ref
+            ) credits
+        """, w_utc)[0]
+    except DatabaseError:
+        return None
+    return {"count": int(row["n"]), "value": float(row["value"])}
+
+
 def failure_rates(now):
     rows = fetch(f"""
         SELECT bucket,
@@ -387,6 +407,7 @@ def funnel(w, now):
         "stuck": stuck,
         "median_minutes_to_account": minutes[len(minutes) // 2] if minutes else None,
         "signups": signups,
+        "today_stuck": max(signups["today"] - today_phases.get("ACCOUNT_CREATED", 0), 0),
         "accounts_all_time": int(fetch(f"""
             SELECT COUNT(*) AS n FROM {ONBOARDING} WHERE ONBOARDING_PHASE = 'ACCOUNT_CREATED'
         """, {})[0]["n"]),
@@ -552,6 +573,7 @@ def build_pulse(now=None):
         "active_users": active_users(w),
         "new_accounts": new_accounts(w),
         "rewards": rewards(as_utc(w)),
+        "money_in": money_in(as_utc(w)),
         "health": health(w, now, tx["products"]),
         "funnel": funnel(w, now),
         "geography": geography(w, now),
