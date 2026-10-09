@@ -1,6 +1,8 @@
 asgiref==3.12.1
 django-cors-headers==4.9.0
 Django==5.2.17
+psycopg-binary==3.3.6
+psycopg==3.3.6
 PyMySQL==1.2.3
 python-dotenv==1.2.3
 sqlparse==0.6.0
