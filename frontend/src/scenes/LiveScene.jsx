@@ -183,6 +183,7 @@ function TodayPanel({ data }) {
   const out = mix.filter((g) => g.group !== 'Within Dash').reduce((a, g) => a + g.value, 0)
   const opened = data.new_accounts?.today ?? 0
   const stuck = data.funnel?.today_stuck ?? 0
+  const started = data.funnel?.signups?.today ?? 0
   const moneyIn = data.money_in
   return (
     <Panel className="shrink-0 !py-[2vh]" delay={0.2}>
@@ -192,13 +193,13 @@ function TodayPanel({ data }) {
           label="Accounts opened"
           value={num(opened)}
           tone="text-good"
-          note="Finished signing up and got an account."
+          note="Got their account today, including people who started yesterday."
         />
         <TodayFigure
           label="Stuck halfway"
           value={num(stuck)}
           tone="text-warn"
-          note="Started signing up today, not finished yet."
+          note={`Of the ${num(started)} who started signing up today, not finished yet.`}
         />
         <TodayFigure
           label="Money in"
