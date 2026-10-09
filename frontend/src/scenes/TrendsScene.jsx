@@ -27,9 +27,14 @@ const path = (values, max, w = W, h = H, pad = PAD) =>
 
 const shortDate = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 
+const isFlat = (value, points) => (points ? Math.abs(value) < 0.01 : Math.abs(value) < 0.05)
+
+const direction = (value, points) =>
+  isFlat(value, points) ? 'about the same as' : value > 0 ? 'higher than' : 'lower than'
+
 function Change({ value, points = false, invert = false }) {
   if (value == null) return <span className="text-muted">—</span>
-  const flat = points ? Math.abs(value) < 0.01 : Math.abs(value) < 0.05
+  const flat = isFlat(value, points)
   const up = value > 0
   const good = invert ? !up : up
   const Icon = flat ? Minus : up ? ArrowUpRight : ArrowDownRight
@@ -100,29 +105,39 @@ export default function TrendsScene({ data }) {
       <Panel className="col-span-8 flex min-h-0 flex-col">
         <div className="flex items-start justify-between gap-6">
           <div>
-            <Eyebrow>Transactions per day · last {t.days} days · weeks compared by their typical day</Eyebrow>
+            <Eyebrow>Transactions per day · last {t.days} days</Eyebrow>
             <div className="mt-1 text-[clamp(16px,1.4vw,30px)] font-medium">Where we're heading</div>
+            <p className="mt-1 max-w-[46ch] text-[clamp(11px,0.85vw,17px)] leading-snug text-muted">
+              How many transactions customers make each day, over the last {t.days} days. Hover over any day to see its
+              details.
+            </p>
           </div>
-          <div className="flex gap-[2vw] text-right">
-            {[
-              ['This week', s.this_week, null],
-              ['Last week', s.last_week, s.vs_last_week],
-              ['4 weeks ago', s.month_ago, s.vs_month_ago],
-            ].map(([label, value, change]) => (
-              <div key={label}>
-                <div className="text-[clamp(9px,0.7vw,14px)] tracking-[0.18em] text-muted uppercase">{label}</div>
-                <div className="tabular mt-1 text-[clamp(18px,1.7vw,36px)] font-semibold">
-                  {num(value)}
-                  <span className="ml-1 text-[clamp(10px,0.75vw,15px)] font-normal text-muted">/day</span>
-                </div>
-                {change != null && (
-                  <div className="text-[clamp(11px,0.85vw,17px)]">
-                    <span className="mr-1 text-muted">this week</span>
-                    <Change value={change} />
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex gap-[2vw] text-right">
+              {[
+                ['This week', s.this_week, null],
+                ['Last week', s.last_week, s.vs_last_week],
+                ['4 weeks ago', s.month_ago, s.vs_month_ago],
+              ].map(([label, value, change]) => (
+                <div key={label}>
+                  <div className="text-[clamp(9px,0.7vw,14px)] tracking-[0.18em] text-muted uppercase">{label}</div>
+                  <div className="tabular mt-1 text-[clamp(18px,1.7vw,36px)] font-semibold">
+                    {num(value)}
+                    <span className="ml-1 text-[clamp(10px,0.75vw,15px)] font-normal text-muted">/day</span>
                   </div>
-                )}
-              </div>
-            ))}
+                  {change != null && (
+                    <div className="text-[clamp(11px,0.85vw,17px)] text-muted">
+                      this week is <Change value={change} />{' '}
+                      {isFlat(change) ? 'the same' : change > 0 ? 'higher' : 'lower'}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <p className="max-w-[48ch] text-right text-[clamp(10px,0.75vw,15px)] leading-snug text-muted/80">
+              Each week is shown as its typical day: the middle day of that week, so one unusually busy or quiet day
+              does not skew it.
+            </p>
           </div>
         </div>
 
@@ -218,7 +233,9 @@ export default function TrendsScene({ data }) {
               animate={{ opacity: 1 }}
               transition={{ delay: 2 }}
             >
-              <span className="absolute top-0 left-2 rounded-full bg-warn/15 px-2 py-0.5 text-[clamp(10px,0.75vw,15px)] whitespace-nowrap text-warn">
+              <span
+                className={`absolute top-0 ${rewardsIndex / (series.length - 1) > 0.7 ? 'right-2' : 'left-2'} rounded-full bg-warn/15 px-2 py-0.5 text-[clamp(10px,0.75vw,15px)] whitespace-nowrap text-warn`}
+              >
                 Rewards last paid · {shortDate(rewardsDate)}
               </span>
             </motion.div>
@@ -234,10 +251,11 @@ export default function TrendsScene({ data }) {
 
         <div className="mt-2 flex gap-6 text-[clamp(11px,0.85vw,17px)] text-muted">
           <span className="flex items-center gap-2">
-            <span className="h-[3px] w-6 rounded-full bg-brand-soft" /> 7-day average
+            <span className="h-[3px] w-6 rounded-full bg-brand-soft" /> Bright line: 7-day average, smooths out daily
+            ups and downs
           </span>
           <span className="flex items-center gap-2">
-            <span className="h-[2px] w-6 rounded-full bg-accent/50" /> Each day
+            <span className="h-[2px] w-6 rounded-full bg-accent/50" /> Faint line: the actual count each day
           </span>
         </div>
       </Panel>
@@ -282,6 +300,13 @@ export default function TrendsScene({ data }) {
   )
 }
 
+const ABOUT = {
+  value: 'Money customers successfully moved on a typical day this week.',
+  signups: 'People who started opening an account, on a typical day this week.',
+  accounts: 'Accounts actually opened, on a typical day this week.',
+  failure_rate: 'Out of every 100 transactions this week, how many failed. Lower is better.',
+}
+
 const EXPLAIN = {
   value:
     'Total money in successful transactions. Bigger transfers can raise it even when there are fewer transactions.',
@@ -297,41 +322,59 @@ function Metric({ label, field, series, summary, format, points = false, invert 
     <Panel className="flex min-h-0 items-center gap-[1.2vw] !py-[1.4vh]" delay={delay}>
       <div className="min-w-0 flex-1">
         <Eyebrow>{label}</Eyebrow>
+        <p className="mt-0.5 line-clamp-2 text-[clamp(10px,0.75vw,15px)] leading-snug text-muted/80">{ABOUT[field]}</p>
         <div className="tabular mt-1 text-[clamp(18px,1.6vw,34px)] leading-tight font-semibold">
           {format(summary.this_week)}
-          {!points && <span className="ml-1 text-[clamp(10px,0.75vw,15px)] font-normal text-muted">/day</span>}
+          {!points && <span className="ml-1 text-[clamp(10px,0.75vw,15px)] font-normal text-muted">a day</span>}
         </div>
         <div className="text-[clamp(11px,0.85vw,17px)] text-muted">
-          <Change value={summary.vs_month_ago} points={points} invert={invert} /> vs 4 weeks ago
+          {summary.vs_month_ago == null ? (
+            summary.this_week == null ? (
+              'No transactions yet this week'
+            ) : (
+              'Nothing from 4 weeks ago to compare with'
+            )
+          ) : (
+            <>
+              <Change value={summary.vs_month_ago} points={points} invert={invert} />{' '}
+              {direction(summary.vs_month_ago, points)} 4 weeks ago
+              {summary.month_ago != null && <span className="text-muted/70"> (was {format(summary.month_ago)})</span>}
+            </>
+          )}
         </div>
       </div>
-      <ChartHover
-        count={series.length}
-        className="h-[70%] w-[45%] shrink-0"
-        markers={(i) => [{ y: (60 - 4 - (values[i] / max) * 52) / 60, color: 'var(--color-brand-soft)' }]}
-        render={(i) => (
-          <>
-            <TipTitle>
-              {label} · {longDate(series[i].date)}
-            </TipTitle>
-            <TipRow label="That day" value={series[i][field] == null ? '—' : format(series[i][field])} />
-            <TipRow label="7-day average" value={format(values[i])} color="var(--color-brand-soft)" />
-            <TipNote>{EXPLAIN[field]}</TipNote>
-          </>
-        )}
-      >
-        <svg viewBox="0 0 200 60" preserveAspectRatio="none" className="size-full overflow-visible">
-          <motion.path
-            d={path(values, max, 200, 60, 4)}
-            fill="none"
-            stroke="var(--color-brand-soft)"
-            strokeWidth="2"
-            initial={{ pathLength: 0 }}
-            animate={{ pathLength: 1 }}
-            transition={{ duration: 1.6, delay: delay + 0.3, ease: EASE }}
-          />
-        </svg>
-      </ChartHover>
+      <div className="flex h-[78%] w-[42%] shrink-0 flex-col">
+        <ChartHover
+          count={series.length}
+          className="min-h-0 w-full flex-1"
+          markers={(i) => [{ y: (60 - 4 - (values[i] / max) * 52) / 60, color: 'var(--color-brand-soft)' }]}
+          render={(i) => (
+            <>
+              <TipTitle>
+                {label} · {longDate(series[i].date)}
+              </TipTitle>
+              <TipRow label="That day" value={series[i][field] == null ? '—' : format(series[i][field])} />
+              <TipRow label="7-day average" value={format(values[i])} color="var(--color-brand-soft)" />
+              <TipNote>{EXPLAIN[field]}</TipNote>
+            </>
+          )}
+        >
+          <svg viewBox="0 0 200 60" preserveAspectRatio="none" className="size-full overflow-visible">
+            <motion.path
+              d={path(values, max, 200, 60, 4)}
+              fill="none"
+              stroke="var(--color-brand-soft)"
+              strokeWidth="2"
+              initial={{ pathLength: 0 }}
+              animate={{ pathLength: 1 }}
+              transition={{ duration: 1.6, delay: delay + 0.3, ease: EASE }}
+            />
+          </svg>
+        </ChartHover>
+        <div className="mt-1 text-right text-[clamp(9px,0.65vw,13px)] text-muted/70">
+          Last {series.length} days · 7-day average
+        </div>
+      </div>
     </Panel>
   )
 }
