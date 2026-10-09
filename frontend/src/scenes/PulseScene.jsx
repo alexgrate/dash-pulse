@@ -44,7 +44,12 @@ export default function PulseScene({ data }) {
         </Drill>
 
         <div className="grid grid-cols-2 gap-[1vw]">
-          <Stat label="Value moved · all products" delay={0.15} to={list({ status: 'SUCCESS' })}>
+          <Stat
+            label="Money sent by customers"
+            note="Money out plus within Dash. Money in is on the Live tab."
+            delay={0.15}
+            to={list({ status: 'SUCCESS' })}
+          >
             <AnimatedNumber value={today.value} format={naira} />
             <Delta today={today.value} yesterday={yesterday.value} label="vs yesterday" />
           </Stat>
@@ -108,12 +113,13 @@ export default function PulseScene({ data }) {
   )
 }
 
-function Stat({ label, delay, to, children }) {
+function Stat({ label, note, delay, to, children }) {
   const [value, sub] = children
   return (
     <Panel delay={delay}>
       <Drill to={to} className="-m-2 p-2">
         <Eyebrow>{label}</Eyebrow>
+        {note && <div className="mt-0.5 text-[clamp(10px,0.72vw,14px)] leading-snug text-muted/75">{note}</div>}
         <div className="mt-1 text-[clamp(22px,min(2.6vw,4.6vh),56px)] font-semibold tracking-tight">{value}</div>
         <div className="mt-1">{sub}</div>
       </Drill>

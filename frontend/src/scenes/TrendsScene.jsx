@@ -159,7 +159,7 @@ export default function TrendsScene({ data }) {
                   <TipRow label="Transactions" value={num(d.transactions)} color="var(--color-accent)" />
                   <TipRow label="7-day average" value={`${num(smooth[i])} a day`} color="var(--color-brand-soft)" />
                   {normal != null && <TipRow label="Normal day before it" value={num(normal)} />}
-                  <TipRow label="Money moved" value={naira(d.value)} />
+                  <TipRow label="Money sent" value={naira(d.value)} />
                   <TipRow
                     label="Failed"
                     value={d.failure_rate == null ? '—' : `${num(d.failed)} (${pct(d.failure_rate, 0)})`}
@@ -262,7 +262,7 @@ export default function TrendsScene({ data }) {
 
       <div className="col-span-4 grid min-h-0 grid-rows-4 gap-[1.2vw]">
         <Metric
-          label="Value moved"
+          label="Money sent"
           field="value"
           series={series}
           summary={t.summary.value}
@@ -301,7 +301,7 @@ export default function TrendsScene({ data }) {
 }
 
 const ABOUT = {
-  value: 'Money customers successfully moved on a typical day this week.',
+  value: 'Money customers sent (out of Dash and within Dash), on a typical day this week.',
   signups: 'People who started opening an account, on a typical day this week.',
   accounts: 'Accounts actually opened, on a typical day this week.',
   failure_rate: 'Out of every 100 transactions this week, how many failed. Lower is better.',

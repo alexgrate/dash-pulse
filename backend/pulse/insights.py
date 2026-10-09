@@ -358,7 +358,7 @@ def bank_health(p, b):
 
 TREND_LABELS = {
     "transactions": "Transactions",
-    "value": "Value moved",
+    "value": "Money sent by customers",
     "signups": "Sign-ups",
     "accounts": "New accounts",
 }

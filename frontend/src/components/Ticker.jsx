@@ -12,7 +12,7 @@ export default function Ticker({ data }) {
     ...(data.intelligence?.items ?? []).slice(0, 4).map((i) => i.title),
     `${num(t.count)} transactions today`,
     `${pct(t.success_rate)} success rate`,
-    `${naira(t.value)} moved`,
+    `${naira(t.value)} sent by customers`,
     `${num(t.failed)} failed · ${num(t.reversed)} reversed`,
     `${num(data.active_users.today)} active users`,
     `${num(data.new_accounts.today)} new accounts`,
