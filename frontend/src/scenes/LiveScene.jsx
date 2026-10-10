@@ -100,7 +100,7 @@ export default function LiveScene({ data }) {
       </div>
 
       <div className="col-span-5 flex min-h-0 flex-col gap-[2.5vw]">
-        <Panel className={`flex flex-1 flex-col justify-center border ${style.border}`} delay={0.15}>
+        <Panel className={`flex flex-1 flex-col justify-center-safe border ${style.border}`} delay={0.15}>
           <div className="flex items-center gap-3">
             <HeartPulse className={`size-[clamp(16px,1.3vw,28px)] ${style.tone}`} />
             <Eyebrow>Last transaction</Eyebrow>
@@ -232,7 +232,7 @@ function WindowPanel({ live }) {
     n: w ? w[k.toLowerCase()] : 0,
   }))
   return (
-    <Panel className="flex flex-1 flex-col justify-center" delay={0.25}>
+    <Panel className="flex flex-1 flex-col justify-center-safe" delay={0.25}>
       <Eyebrow>Last {live?.window_minutes ?? 15} minutes</Eyebrow>
       <div className="mt-2 flex items-baseline gap-3">
         <AnimatedNumber

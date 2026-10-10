@@ -87,7 +87,7 @@ export default function FlowScene({ data }) {
 
 function BigCard({ icon: Icon, label, value, yesterday, compareLabel, extra, delay }) {
   return (
-    <Panel className="flex flex-1 flex-col justify-center" delay={delay}>
+    <Panel className="flex flex-1 flex-col justify-center-safe" delay={delay}>
       <div className="flex items-center gap-3">
         <Icon className="size-[clamp(16px,1.3vw,28px)] text-accent" />
         <Eyebrow>{label}</Eyebrow>

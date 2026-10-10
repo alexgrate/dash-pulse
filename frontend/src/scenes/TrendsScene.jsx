@@ -322,7 +322,9 @@ function Metric({ label, field, series, summary, format, points = false, invert 
     <Panel className="flex min-h-0 items-center gap-[1.2vw] !py-[1.4vh]" delay={delay}>
       <div className="min-w-0 flex-1">
         <Eyebrow>{label}</Eyebrow>
-        <p className="mt-0.5 line-clamp-2 text-[clamp(10px,0.75vw,15px)] leading-snug text-muted/80">{ABOUT[field]}</p>
+        <p className="mt-0.5 line-clamp-2 text-[clamp(10px,0.75vw,15px)] leading-snug text-muted/80 [@media(max-height:820px)]:hidden">
+          {ABOUT[field]}
+        </p>
         <div className="tabular mt-1 text-[clamp(18px,1.6vw,34px)] leading-tight font-semibold">
           {format(summary.this_week)}
           {!points && <span className="ml-1 text-[clamp(10px,0.75vw,15px)] font-normal text-muted">a day</span>}
@@ -338,7 +340,12 @@ function Metric({ label, field, series, summary, format, points = false, invert 
             <>
               <Change value={summary.vs_month_ago} points={points} invert={invert} />{' '}
               {direction(summary.vs_month_ago, points)} 4 weeks ago
-              {summary.month_ago != null && <span className="text-muted/70"> (was {format(summary.month_ago)})</span>}
+              {summary.month_ago != null && (
+                <span className="text-muted/70 [@media(max-height:820px)]:hidden">
+                  {' '}
+                  (was {format(summary.month_ago)})
+                </span>
+              )}
             </>
           )}
         </div>

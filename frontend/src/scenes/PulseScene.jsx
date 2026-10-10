@@ -16,14 +16,14 @@ export default function PulseScene({ data }) {
 
   return (
     <div className="grid h-full grid-cols-12 grid-rows-[minmax(0,1fr)] gap-[2.5vw]">
-      <div className="col-span-5 flex min-h-0 flex-col justify-center gap-[3.5vh]">
+      <div className="col-span-5 flex min-h-0 flex-col justify-center-safe gap-[2.5vh]">
         <Drill to={list()} className="-m-3 p-3">
           <Eyebrow>Transactions today</Eyebrow>
           <AnimatedNumber
             value={today.count}
-            className="mt-2 block text-[clamp(56px,min(10vw,17vh),220px)] leading-[0.9] font-semibold tracking-[-0.04em]"
+            className="mt-2 block text-[clamp(48px,min(10vw,15vh),220px)] leading-[0.9] font-semibold tracking-[-0.04em]"
           />
-          <div className="mt-5">
+          <div className="mt-[1.5vh]">
             {typical?.so_far_median ? (
               <Delta today={today.count} yesterday={typical.so_far_median} label={`vs a typical ${typical.weekday}`} />
             ) : (
@@ -31,7 +31,7 @@ export default function PulseScene({ data }) {
             )}
           </div>
           {forecast && (
-            <div className="mt-4 flex items-center gap-2 text-[clamp(12px,1vw,21px)] text-muted">
+            <div className="mt-[1.2vh] flex items-center gap-2 text-[clamp(12px,1vw,21px)] text-muted">
               <Target className="size-[1.1em] text-brand-soft" />
               On track for <span className="tabular font-semibold text-slate-100">~{num(forecast.projected)}</span>
               {typical && (
@@ -43,7 +43,7 @@ export default function PulseScene({ data }) {
           )}
         </Drill>
 
-        <div className="grid grid-cols-2 gap-[1vw]">
+        <div className="grid grid-cols-2 gap-[min(1vw,1.6vh)]">
           <Stat
             label="Money sent by customers"
             note="Money out plus within Dash. Money in is on the Live tab."
@@ -116,11 +116,15 @@ export default function PulseScene({ data }) {
 function Stat({ label, note, delay, to, children }) {
   const [value, sub] = children
   return (
-    <Panel delay={delay}>
+    <Panel delay={delay} className="!py-[min(1.6vw,2.6vh)]">
       <Drill to={to} className="-m-2 p-2">
         <Eyebrow>{label}</Eyebrow>
-        {note && <div className="mt-0.5 text-[clamp(10px,0.72vw,14px)] leading-snug text-muted/75">{note}</div>}
-        <div className="mt-1 text-[clamp(22px,min(2.6vw,4.6vh),56px)] font-semibold tracking-tight">{value}</div>
+        {note && (
+          <div className="mt-0.5 text-[clamp(10px,0.72vw,14px)] leading-snug text-muted/75 [@media(max-height:820px)]:hidden">
+            {note}
+          </div>
+        )}
+        <div className="mt-1 text-[clamp(20px,min(2.6vw,4.2vh),56px)] font-semibold tracking-tight">{value}</div>
         <div className="mt-1">{sub}</div>
       </Drill>
     </Panel>

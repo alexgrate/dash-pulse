@@ -96,7 +96,7 @@ function Devices({ devices }) {
   const android = devices.android / total
   const ios = devices.ios / total
   return (
-    <Panel className="flex flex-1 flex-col justify-center" delay={0.15}>
+    <Panel className="flex flex-1 flex-col justify-center-safe" delay={0.15}>
       <div className="flex items-center gap-3">
         <Smartphone className="size-[clamp(16px,1.3vw,28px)] text-accent" />
         <Eyebrow>Devices used today</Eyebrow>
@@ -147,7 +147,7 @@ function BankHealth({ data, overall }) {
   const problem = insight && (insight.severity === 'bad' || insight.severity === 'warn')
   const tone = TONES[problem ? insight.severity : 'good']
   return (
-    <Panel className={`flex flex-1 flex-col justify-center border ${tone.border}`} delay={0.25}>
+    <Panel className={`flex flex-1 flex-col justify-center-safe border ${tone.border}`} delay={0.25}>
       <div className="flex items-center gap-3">
         {problem ? (
           <InsightIcon insight={insight} className={`size-[clamp(16px,1.3vw,28px)] ${tone.text}`} />

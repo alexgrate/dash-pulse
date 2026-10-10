@@ -37,7 +37,7 @@ export default function HealthScene({ data }) {
   return (
     <div className="grid h-full grid-cols-12 gap-[2vw]">
       <div className="col-span-4 flex flex-col gap-[2vw]">
-        <Panel className="flex flex-1 flex-col justify-center">
+        <Panel className="flex flex-1 flex-col justify-center-safe">
           <div className="flex items-center gap-3">
             {alert || rising ? (
               <AlertTriangle className="size-[clamp(16px,1.3vw,28px)] text-bad" />
@@ -70,7 +70,7 @@ export default function HealthScene({ data }) {
           </div>
         </Panel>
 
-        <Panel className="flex flex-1 flex-col justify-center" delay={0.15}>
+        <Panel className="flex flex-1 flex-col justify-center-safe" delay={0.15}>
           <div className="flex items-center gap-3">
             <ScanFace className="size-[clamp(16px,1.3vw,28px)] text-glow" />
             <Eyebrow>Face checks failing today</Eyebrow>
