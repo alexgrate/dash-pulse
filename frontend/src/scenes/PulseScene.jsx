@@ -16,12 +16,12 @@ export default function PulseScene({ data }) {
 
   return (
     <div className="grid h-full grid-cols-12 grid-rows-[minmax(0,1fr)] gap-[2.5vw]">
-      <div className="col-span-5 flex min-h-0 flex-col justify-center-safe gap-[2.5vh]">
+      <div className="col-span-5 flex min-h-0 flex-col justify-center-safe gap-[2.5vh] overflow-hidden [@media(max-height:820px)]:gap-[1.6vh]">
         <Drill to={list()} className="-m-3 p-3">
           <Eyebrow>Transactions today</Eyebrow>
           <AnimatedNumber
             value={today.count}
-            className="mt-2 block text-[clamp(48px,min(10vw,15vh),220px)] leading-[0.9] font-semibold tracking-[-0.04em]"
+            className="mt-2 block text-[clamp(44px,min(10vw,15vh),220px)] leading-[0.9] font-semibold tracking-[-0.04em] [@media(max-height:820px)]:text-[12vh]"
           />
           <div className="mt-[1.5vh]">
             {typical?.so_far_median ? (
