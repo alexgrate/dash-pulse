@@ -4,7 +4,7 @@ import AnimatedNumber from '../components/AnimatedNumber'
 import Delta from '../components/Delta'
 import Drill from '../components/Drill'
 import { Eyebrow, Panel } from '../components/ui'
-import { stuck } from '../lib/explore'
+import { opened, signups, stuck } from '../lib/explore'
 import { num, pct } from '../lib/format'
 import { versus } from '../lib/insights'
 
@@ -29,7 +29,7 @@ export default function FunnelScene({ data }) {
     <div className="grid h-full grid-cols-12 grid-rows-[minmax(0,1fr)] gap-[2vw]">
       <div className="col-span-8 flex min-h-0 flex-col gap-[2vw]">
         <div className="grid grid-cols-3 gap-[1.4vw]">
-          <Kpi icon={UserPlus} label="Sign-ups today" delay={0}>
+          <Kpi icon={UserPlus} label="Sign-ups today" to={signups()} delay={0}>
             <AnimatedNumber value={f.signups.today} />
             <Delta
               today={f.signups.today}
@@ -53,7 +53,7 @@ export default function FunnelScene({ data }) {
           <div className="flex items-start justify-between gap-4">
             <Eyebrow>Onboarding funnel · last {f.days} days</Eyebrow>
             {f.accounts_all_time != null && (
-              <div className="text-right">
+              <Drill to={opened('all')} className="-m-2 p-2 text-right">
                 <div className="text-[clamp(9px,0.7vw,14px)] tracking-[0.18em] text-muted uppercase">
                   Total accounts · all time
                 </div>
@@ -66,7 +66,7 @@ export default function FunnelScene({ data }) {
                     +{num(data.new_accounts.today)} today
                   </span>
                 </div>
-              </div>
+              </Drill>
             )}
           </div>
           <div className="mt-[3vh] grid min-h-0 flex-1 grid-cols-6 gap-[1vw]">
@@ -143,16 +143,18 @@ export default function FunnelScene({ data }) {
   )
 }
 
-function Kpi({ icon: Icon, label, delay, className, children }) {
+function Kpi({ icon: Icon, label, to, delay, className, children }) {
   const [value, sub] = children
   return (
     <Panel className={className} delay={delay}>
-      <div className="flex items-center gap-3">
-        <Icon className="size-[clamp(16px,1.3vw,28px)] text-accent" />
-        <Eyebrow>{label}</Eyebrow>
-      </div>
-      <div className="mt-2 text-[clamp(28px,2.8vw,60px)] leading-none font-semibold tracking-[-0.03em]">{value}</div>
-      <div className="mt-3">{sub}</div>
+      <Drill to={to} className="-m-2 p-2">
+        <div className="flex items-center gap-3">
+          <Icon className="size-[clamp(16px,1.3vw,28px)] text-accent" />
+          <Eyebrow>{label}</Eyebrow>
+        </div>
+        <div className="mt-2 text-[clamp(28px,2.8vw,60px)] leading-none font-semibold tracking-[-0.03em]">{value}</div>
+        <div className="mt-3">{sub}</div>
+      </Drill>
     </Panel>
   )
 }

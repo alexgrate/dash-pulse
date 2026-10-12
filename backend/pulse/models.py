@@ -11,3 +11,8 @@ class ExploreLog(models.Model):
 
     class Meta:
         ordering = ["-at"]
+
+
+class FailureNotice(models.Model):
+    tx_id = models.BigIntegerField(unique=True)
+    sent_at = models.DateTimeField(auto_now_add=True)

@@ -7,7 +7,7 @@ from django.views.decorators.http import require_GET
 
 from . import banks as bank_names
 from .auth import explorer_required
-from .queries import FUNNEL_DAYS, LEGACY, ONBOARDING, OUTCOME_SQL, PAYMENTS, PHASE_LABELS, WAT, fetch, lagos_now
+from .queries import FUNNEL_DAYS, LEGACY, WEBHOOKS, ONBOARDING, OUTCOME_SQL, PAYMENTS, PHASE_LABELS, WAT, fetch, lagos_now
 from .reasons import REASON_SQL, classify
 
 ACCOUNTS = "`dashmfb-cba-mcs`.accounts"
@@ -302,3 +302,152 @@ def onboarding(request):
             continue
         items.append(item)
     return JsonResponse({"phase": phase, "label": PHASE_LABELS[phase], "scope": scope, **paged(items, request)})
+
+
+STAGE_FILTERS = {
+    "opened": "o.ACCOUNT_OPENED_DATE IS NOT NULL",
+    "not_opened": "o.ACCOUNT_OPENED_DATE IS NULL",
+}
+
+
+def stage_label(phase, opened):
+    if opened or phase == "ACCOUNT_CREATED":
+        return "Account opened"
+    return PHASE_LABELS.get(phase, phase or "Unknown")
+
+
+@require_GET
+@explorer_required
+@unavailable
+def people(request):
+    g = request.GET
+    mode = "signups" if g.get("mode") == "signups" else "opened"
+    all_time = mode == "opened" and g.get("date") == "all"
+    day = None if all_time else parse_day(g.get("date"))
+    column = "o.DATE_CREATED" if mode == "signups" else "o.ACCOUNT_OPENED_DATE"
+
+    where, params = [], {}
+    if all_time:
+        where.append("o.ACCOUNT_OPENED_DATE IS NOT NULL")
+    else:
+        start = datetime.combine(day, datetime.min.time())
+        where.append(f"{column} >= %(start)s AND {column} < %(end)s")
+        params.update(start=start, end=start + timedelta(days=1))
+    stage = g.get("stage") if mode == "signups" and g.get("stage") in STAGE_FILTERS else None
+    if stage:
+        where.append(STAGE_FILTERS[stage])
+
+    for n, word in enumerate((g.get("search") or "").lower().split()[:5]):
+        params[f"w{n}"] = f"%{word}%"
+        clause = (f"LOWER(CONCAT_WS(' ', o.FIRSTNAME, o.LASTNAME, o.EMAIL, o.PHONE_NUMBER)) LIKE %(w{n})s")
+        if word.isdigit() and len(word) >= 4:
+            emails = [r["email"] for r in fetch(f"""
+                SELECT LOWER(TRIM(customer_email_address)) AS email FROM {ACCOUNTS}
+                WHERE account_number LIKE %(w)s LIMIT 200
+            """, {"w": f"%{word}%"}) if r["email"]]
+            if emails:
+                params[f"e{n}"] = emails
+                clause = f"({clause} OR LOWER(TRIM(o.EMAIL)) IN %(e{n})s)"
+        where.append(clause)
+
+    sql_where = " AND ".join(where)
+    total = int(fetch(f"SELECT COUNT(*) AS n FROM {ONBOARDING} o WHERE {sql_where}", params)[0]["n"])
+    pages = max(ceil(total / PAGE_SIZE), 1)
+    page = min(max(parse_int(g.get("page"), 1), 1), pages)
+    rows = fetch(f"""
+        SELECT o.ID AS id, o.FIRSTNAME AS first, o.LASTNAME AS last, o.EMAIL AS email, o.PHONE_NUMBER AS phone,
+               o.DATE_CREATED AS started, o.ACCOUNT_OPENED_DATE AS opened, o.ONBOARDING_PHASE AS phase
+        FROM {ONBOARDING} o
+        WHERE {sql_where}
+        ORDER BY {column} DESC, o.ID DESC
+        LIMIT {PAGE_SIZE} OFFSET {(page - 1) * PAGE_SIZE}
+    """, params)
+
+    emails = sorted({r["email"].strip().lower() for r in rows if r["email"]})
+    found = {}
+    if emails:
+        for a in fetch(f"""
+            SELECT LOWER(TRIM(customer_email_address)) AS email, account_number, status
+            FROM {ACCOUNTS}
+            WHERE LOWER(TRIM(customer_email_address)) IN %(emails)s
+            ORDER BY created_at
+        """, {"emails": emails}):
+            found[a["email"]] = a
+
+    items = []
+    for r in rows:
+        a = found.get((r["email"] or "").strip().lower(), {})
+        minutes = None
+        if r["started"] and r["opened"] and r["opened"] >= r["started"]:
+            minutes = round((r["opened"] - r["started"]).total_seconds() / 60)
+        items.append({
+            "id": int(r["id"]),
+            "name": " ".join(x for x in (r["first"], r["last"]) if x) or None,
+            "account": a.get("account_number"),
+            "status": a.get("status"),
+            "email": r["email"],
+            "phone": r["phone"],
+            "started": iso(r["started"]),
+            "opened": iso(r["opened"]),
+            "minutes_to_open": minutes,
+            "stage": stage_label(r["phase"], r["opened"]),
+            "done": bool(r["opened"]),
+        })
+    return JsonResponse({
+        "mode": mode,
+        "date": "all" if all_time else day.isoformat(),
+        "stage": stage,
+        "total": total,
+        "page": page,
+        "pages": pages,
+        "items": items,
+    })
+
+
+@require_GET
+@explorer_required
+@unavailable
+def money_in(request):
+    g = request.GET
+    day = parse_day(g.get("date"))
+    start = datetime.combine(day, datetime.min.time()) - WAT
+    params = {"start": start, "end": start + timedelta(days=1)}
+    where = ["created_at >= %(start)s", "created_at < %(end)s",
+             "JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.drCr')) = 'CR'",
+             "JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.service')) = 'INWARD'"]
+    for n, word in enumerate((g.get("search") or "").lower().split()[:5]):
+        params[f"w{n}"] = f"%{word}%"
+        where.append(f"LOWER(CONCAT_WS(' ', account_number, provider_ref, "
+                     f"JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.narration')))) LIKE %(w{n})s")
+    sql_where = " AND ".join(where)
+    base = f"""
+        SELECT provider_ref, MIN(created_at) AS at, MAX(account_number) AS account,
+               MAX(CAST(JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.amount')) AS DECIMAL(18,2))) AS amount,
+               MAX(JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.narration'))) AS narration
+        FROM {WEBHOOKS} WHERE {sql_where} GROUP BY provider_ref
+    """
+    summary = fetch(f"SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS value FROM ({base}) t", params)[0]
+    total = int(summary["n"])
+    pages = max(ceil(total / PAGE_SIZE), 1)
+    page = min(max(parse_int(g.get("page"), 1), 1), pages)
+    rows = fetch(f"{base} ORDER BY at DESC LIMIT {PAGE_SIZE} OFFSET {(page - 1) * PAGE_SIZE}", params)
+    numbers = sorted({r["account"] for r in rows if r["account"]})
+    names = {}
+    if numbers:
+        names = {a["account_number"]: a["account_name"] for a in fetch(
+            f"SELECT account_number, account_name FROM {ACCOUNTS} WHERE account_number IN %(n)s", {"n": numbers})}
+    return JsonResponse({
+        "date": day.isoformat(),
+        "total": total,
+        "value": float(summary["value"]),
+        "page": page,
+        "pages": pages,
+        "items": [{
+            "ref": r["provider_ref"],
+            "at": utc_to_lagos(r["at"]),
+            "account": r["account"],
+            "name": names.get(r["account"]),
+            "amount": float(r["amount"] or 0),
+            "narration": r["narration"],
+        } for r in rows],
+    })

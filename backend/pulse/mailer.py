@@ -68,7 +68,7 @@ def send(to, subject, html):
         "message": {
             "subject": subject,
             "body": {"contentType": "HTML", "content": html},
-            "toRecipients": [{"emailAddress": {"address": to}}],
+            "toRecipients": [{"emailAddress": {"address": a}} for a in ([to] if isinstance(to, str) else to)],
         },
         "saveToSentItems": False,
     }

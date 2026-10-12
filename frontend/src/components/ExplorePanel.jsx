@@ -13,7 +13,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
-import { kindLabel, list, tx } from '../lib/explore'
+import { kindLabel, list, MONEY_OUT_KINDS, tx } from '../lib/explore'
 import { num } from '../lib/format'
 
 const OUTCOME = {
@@ -141,6 +141,20 @@ export default function ExplorePanel({ stack, setStack }) {
               )}
               {top.type === 'tx' && <TxView id={top.id} onOpen={(id) => push(tx(id))} />}
               {top.type === 'onboarding' && <OnboardingView frame={top} onChange={(f) => replace({ ...top, ...f })} />}
+              {top.type === 'money-in' && (
+                <MoneyInView
+                  frame={top}
+                  onChange={(f) => replace({ ...top, ...f })}
+                  onOpen={(account, date) => push(list({ date, search: account }))}
+                />
+              )}
+              {top.type === 'people' && (
+                <PeopleView
+                  frame={top}
+                  onChange={(f) => replace({ ...top, ...f })}
+                  onOpen={(account, date) => push(list({ date, search: account }))}
+                />
+              )}
             </div>
           </motion.aside>
         </>
@@ -276,7 +290,13 @@ function ListView({ filters, onChange, onOpen }) {
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        {f.kinds?.length > 0 && <Chip onRemove={() => set({ kinds: [] })}>{f.kinds.map(kindLabel).join(' + ')}</Chip>}
+        {f.kinds?.length > 0 && (
+          <Chip onRemove={() => set({ kinds: [] })}>
+            {f.kinds.length === MONEY_OUT_KINDS.length && f.kinds.every((k) => MONEY_OUT_KINDS.includes(k))
+              ? 'Money out: everything except within Dash'
+              : f.kinds.map(kindLabel).join(' + ')}
+          </Chip>
+        )}
         {f.bank && <Chip onRemove={() => set({ bank: '' })}>To {f.bank}</Chip>}
         {f.reason && <Chip onRemove={() => set({ reason: '' })}>{f.reason}</Chip>}
         {f.hour != null && f.hour !== '' && (
@@ -476,6 +496,253 @@ function TxView({ id, onOpen }) {
           ))}
         </div>
       </Section>
+    </div>
+  )
+}
+
+const dayName = (iso) =>
+  new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+
+const shiftDay = (iso, days) => {
+  const d = new Date(`${iso}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+const PEOPLE_COPY = {
+  opened: { eyebrow: 'New accounts', noun: 'accounts opened', empty: 'No accounts opened.' },
+  signups: { eyebrow: 'Sign-ups', noun: 'people started signing up', empty: 'Nobody signed up.' },
+}
+
+const SIGNUP_STAGES = [
+  ['', 'Everyone'],
+  ['opened', 'Got an account'],
+  ['not_opened', 'Not finished'],
+]
+
+function PeopleView({ frame, onChange, onOpen }) {
+  const f = { page: 1, mode: 'opened', ...frame, date: frame.date || todayIso() }
+  const copy = PEOPLE_COPY[f.mode]
+  const allTime = f.date === 'all'
+  const { data, loading, error } = useApi(
+    `/api/explore/people?${query({ mode: f.mode, date: f.date, stage: f.stage, search: f.search, page: f.page })}`,
+  )
+  const set = (patch) => onChange({ ...patch, page: patch.page ?? 1 })
+  const isToday = f.date === todayIso()
+  const title = allTime
+    ? 'All accounts ever opened'
+    : `${f.mode === 'opened' ? 'Accounts opened' : 'Sign-ups'} ${isToday ? 'today' : `on ${dayName(f.date)}`}`
+  const pill = (on) =>
+    `rounded-full px-3 py-1 text-xs ${on ? 'bg-brand text-white ring-1 ring-brand-soft/40' : 'bg-white/5 text-muted hover:text-slate-100'}`
+  const step =
+    'rounded-lg border border-white/10 px-2.5 py-2 text-sm text-muted hover:text-slate-100 disabled:opacity-30'
+
+  return (
+    <div>
+      <div className="text-xs tracking-[0.18em] text-muted uppercase">{copy.eyebrow}</div>
+      <h2 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h2>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        {f.mode === 'opened' && (
+          <>
+            <button type="button" className={pill(!allTime)} onClick={() => set({ date: todayIso() })}>
+              By day
+            </button>
+            <button type="button" className={pill(allTime)} onClick={() => set({ date: 'all' })}>
+              All time
+            </button>
+          </>
+        )}
+        {f.mode === 'signups' &&
+          SIGNUP_STAGES.map(([value, label]) => (
+            <button
+              key={label}
+              type="button"
+              className={pill((f.stage ?? '') === value)}
+              onClick={() => set({ stage: value || undefined })}
+            >
+              {label}
+            </button>
+          ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {!allTime && (
+          <>
+            <button type="button" className={step} onClick={() => set({ date: shiftDay(f.date, -1) })}>
+              ← Day before
+            </button>
+            <input
+              type="date"
+              value={f.date}
+              max={todayIso()}
+              onChange={(e) => e.target.value && set({ date: e.target.value })}
+              className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-slate-100 [color-scheme:dark]"
+            />
+            <button
+              type="button"
+              className={step}
+              disabled={f.date >= todayIso()}
+              onClick={() => set({ date: shiftDay(f.date, 1) })}
+            >
+              Day after →
+            </button>
+          </>
+        )}
+        <SearchBox
+          value={f.search}
+          onSearch={(search) => set({ search })}
+          placeholder="Name, account number, email or phone"
+        />
+      </div>
+
+      {!data ? (
+        <Loading error={error} />
+      ) : (
+        <div className={loading ? 'opacity-50' : ''}>
+          <div className="mt-4 text-sm text-muted">
+            <span className="tabular text-lg font-semibold text-slate-100">{num(data.total)}</span> {copy.noun}
+            {f.search ? ' matching your search' : ''}. Click someone with an account to see their transactions.
+          </div>
+
+          <div className="mt-3 overflow-hidden rounded-2xl border border-white/10">
+            <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.1fr)] gap-4 bg-white/[0.03] px-4 py-2 text-[11px] tracking-[0.14em] text-muted uppercase">
+              <span>Customer</span>
+              <span>Account</span>
+              <span className="text-right">{f.mode === 'signups' ? 'Where they are' : 'Opened'}</span>
+            </div>
+            {data.items.length === 0 && <div className="p-6 text-center text-muted">{copy.empty}</div>}
+            {data.items.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                disabled={!p.account}
+                onClick={() => onOpen(p.account, (p.opened ?? p.started ?? '').slice(0, 10) || todayIso())}
+                className="grid w-full grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.1fr)] items-center gap-4 border-t border-white/5 px-4 py-3 text-left transition enabled:hover:bg-white/[0.04] disabled:cursor-default"
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-slate-100">{p.name ?? 'No name yet'}</div>
+                  <div className="truncate text-xs text-muted">{p.phone ?? '—'}</div>
+                  <div className="truncate text-xs text-muted">{p.email ?? '—'}</div>
+                </div>
+                <div className="min-w-0">
+                  {p.account ? (
+                    <div className="font-mono text-sm text-slate-100">{p.account}</div>
+                  ) : (
+                    <div className="text-xs text-muted/70 italic">No account yet</div>
+                  )}
+                  {p.status && (
+                    <div className={`text-xs ${p.status === 'ACTIVE' ? 'text-good' : 'text-warn'}`}>
+                      {p.status.toLowerCase()}
+                    </div>
+                  )}
+                </div>
+                <div className="text-right text-xs text-muted">
+                  {f.mode === 'signups' ? (
+                    <>
+                      <span
+                        className={`inline-block rounded-full px-2 py-0.5 ${p.done ? 'bg-good/15 text-good' : 'bg-warn/15 text-warn'}`}
+                      >
+                        {p.stage}
+                      </span>
+                      <div className="mt-1">Started {time(p.started)}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-slate-200">{allTime ? when(p.opened) : time(p.opened)}</div>
+                      {p.minutes_to_open != null && <div>took {p.minutes_to_open} min</div>}
+                    </>
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+          <Pager page={data.page} pages={data.pages} onPage={(page) => set({ page })} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MoneyInView({ frame, onChange, onOpen }) {
+  const f = { page: 1, ...frame, date: frame.date || todayIso() }
+  const { data, loading, error } = useApi(
+    `/api/explore/money-in?${query({ date: f.date, search: f.search, page: f.page })}`,
+  )
+  const set = (patch) => onChange({ ...patch, page: patch.page ?? 1 })
+  const isToday = f.date === todayIso()
+  const step =
+    'rounded-lg border border-white/10 px-2.5 py-2 text-sm text-muted hover:text-slate-100 disabled:opacity-30'
+  const cols = 'grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.9fr)] gap-4'
+  return (
+    <div>
+      <div className="text-xs tracking-[0.18em] text-muted uppercase">Money in</div>
+      <h2 className="mt-1 text-2xl font-semibold tracking-tight">
+        Received from other banks {isToday ? 'today' : `on ${dayName(f.date)}`}
+      </h2>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <button type="button" className={step} onClick={() => set({ date: shiftDay(f.date, -1) })}>
+          ← Day before
+        </button>
+        <input
+          type="date"
+          value={f.date}
+          max={todayIso()}
+          onChange={(e) => e.target.value && set({ date: e.target.value })}
+          className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-slate-100 [color-scheme:dark]"
+        />
+        <button
+          type="button"
+          className={step}
+          disabled={f.date >= todayIso()}
+          onClick={() => set({ date: shiftDay(f.date, 1) })}
+        >
+          Day after →
+        </button>
+        <SearchBox value={f.search} onSearch={(search) => set({ search })} placeholder="Account number or narration" />
+      </div>
+      {!data ? (
+        <Loading error={error} />
+      ) : (
+        <div className={loading ? 'opacity-50' : ''}>
+          <div className="mt-4 grid grid-cols-2 gap-2 text-center">
+            <div className="rounded-xl bg-white/[0.03] py-2">
+              <div className="tabular text-lg font-semibold text-slate-100">{num(data.total)}</div>
+              <div className="text-xs text-muted">Transfers received</div>
+            </div>
+            <div className="rounded-xl bg-white/[0.03] py-2">
+              <div className="tabular text-lg font-semibold text-good">{naira(data.value)}</div>
+              <div className="text-xs text-muted">Total received</div>
+            </div>
+          </div>
+          <div className="mt-3 overflow-hidden rounded-2xl border border-white/10">
+            <div className={`${cols} bg-white/[0.03] px-4 py-2 text-[11px] tracking-[0.14em] text-muted uppercase`}>
+              <span>Received by</span>
+              <span>Amount</span>
+              <span className="text-right">Time</span>
+            </div>
+            {data.items.length === 0 && <div className="p-6 text-center text-muted">Nothing received.</div>}
+            {data.items.map((m) => (
+              <button
+                key={m.ref}
+                type="button"
+                disabled={!m.account}
+                onClick={() => onOpen(m.account, (m.at ?? '').slice(0, 10) || f.date)}
+                className={`${cols} w-full items-center border-t border-white/5 px-4 py-3 text-left transition enabled:hover:bg-white/[0.04] disabled:cursor-default`}
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-slate-100">{m.name ?? 'Unknown account'}</div>
+                  <div className="truncate font-mono text-xs text-muted">{m.account ?? '—'}</div>
+                  {m.narration && <div className="truncate text-xs text-muted">{m.narration}</div>}
+                </div>
+                <div className="tabular text-slate-100">{naira(m.amount)}</div>
+                <div className="text-right text-xs text-muted">{time(m.at)}</div>
+              </button>
+            ))}
+          </div>
+          <Pager page={data.page} pages={data.pages} onPage={(page) => set({ page })} />
+        </div>
+      )}
     </div>
   )
 }

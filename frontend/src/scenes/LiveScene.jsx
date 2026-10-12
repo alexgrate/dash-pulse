@@ -3,7 +3,15 @@ import { AnimatePresence, motion } from 'motion/react'
 import AnimatedNumber from '../components/AnimatedNumber'
 import Drill from '../components/Drill'
 import { Eyebrow, Panel } from '../components/ui'
-import { list, tx, useExplore } from '../lib/explore'
+import {
+  list,
+  MONEY_OUT_KINDS,
+  moneyIn as moneyInList,
+  opened as openedList,
+  signups,
+  tx,
+  useExplore,
+} from '../lib/explore'
 import { useClock } from '../hooks/useClock'
 import { lagosMs, useLive } from '../hooks/useLive'
 import { naira, num, pct } from '../lib/format'
@@ -190,36 +198,49 @@ function TodayPanel({ data }) {
       <Eyebrow>Today so far</Eyebrow>
       <div className="mt-[1.2vh] grid grid-cols-5 gap-x-[1.6vw]">
         <TodayFigure
+          to={openedList()}
           label="Accounts opened"
           value={num(opened)}
           tone="text-good"
           note="Got their account today, including people who started yesterday."
         />
         <TodayFigure
+          to={{ ...signups(), stage: 'not_opened' }}
           label="Stuck halfway"
           value={num(stuck)}
           tone="text-warn"
           note={`Of the ${num(started)} who started signing up today, not finished yet.`}
         />
         <TodayFigure
+          to={moneyInList()}
           label="Money in"
           value={moneyIn ? naira(moneyIn.value) : '—'}
           note={moneyIn ? `${num(moneyIn.count)} transfers received from other banks.` : 'Not available right now.'}
         />
-        <TodayFigure label="Money out" value={naira(out)} note="Sent to other banks, airtime, data and bills." />
-        <TodayFigure label="Within Dash" value={naira(within)} note="Moved between Dash accounts." />
+        <TodayFigure
+          to={list({ status: 'SUCCESS', kinds: MONEY_OUT_KINDS })}
+          label="Money out"
+          value={naira(out)}
+          note="Sent to other banks, airtime, data and bills."
+        />
+        <TodayFigure
+          to={list({ status: 'SUCCESS', kinds: ['INTRA'] })}
+          label="Within Dash"
+          value={naira(within)}
+          note="Moved between Dash accounts."
+        />
       </div>
     </Panel>
   )
 }
 
-function TodayFigure({ label, value, note, tone = 'text-slate-100' }) {
+function TodayFigure({ label, value, note, to, tone = 'text-slate-100' }) {
   return (
-    <div className="min-w-0">
+    <Drill to={to} className="-m-2 min-w-0 p-2">
       <div className="text-[clamp(11px,0.85vw,17px)] text-muted">{label}</div>
       <div className={`tabular text-[clamp(20px,1.9vw,40px)] leading-tight font-semibold ${tone}`}>{value}</div>
       <div className="text-[clamp(10px,0.72vw,14px)] leading-snug text-muted/75">{note}</div>
-    </div>
+    </Drill>
   )
 }
 

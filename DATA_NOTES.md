@@ -109,3 +109,13 @@ password, salt, BVN, NIN, *_IMAGE_PATH, names, phone, email, balances (without a
 ## Money in
 
 Money in comes from `dashmfb-cba-mcs`.webhook_events, the notices NCUBE sends when an account is credited. Each row's `raw_payload` carries `drCr`, `amount` (naira) and `service`. Only `drCr = CR` with `service = INWARD` counts as money in: transfers from other banks. `INTERNAL` credits are left out because they include Dash's own settlement and treasury moves (single credits of hundreds of millions), not customer deposits. Repeated notices for one transfer share a `provider_ref` and are counted once. `created_at` is UTC.
+
+## People lists (Explore)
+
+`/api/explore/people` backs three lists: accounts opened on a day (`ACCOUNT_OPENED_DATE`, WAT, the same rule as the "New accounts opened" count), all accounts ever opened (`date=all`), and sign-ups started on a day (`mode=signups`, by `DATE_CREATED`, optionally `stage=opened|not_opened`). Paging and search run in SQL. The onboarding table does not store the account number, so it and the account status come from `dashmfb-cba-mcs`.accounts, matched on email (trimmed, lower-case) for the 50 rows on the page. Searching digits also matches account numbers.
+
+`/api/explore/money-in?date=` lists INWARD credits from `webhook_events` for one Lagos day, one row per `provider_ref`, with the receiving account's name from `accounts`. Its total matches the Live tab's Money in.
+
+## Failed-transaction emails (pulse/failure_mail.py)
+
+Uses the same FAILED rule as everywhere else. Looks back 2 hours each minute, skips IDs already in `FailureNotice`, leaves out the "Insufficient funds" reason, and sends one email per check. A failure is only recorded as sent after Graph accepts the email, so a failed send is retried on the next check. Records older than 7 days are pruned.

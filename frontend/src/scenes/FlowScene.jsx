@@ -4,7 +4,7 @@ import AnimatedNumber from '../components/AnimatedNumber'
 import Delta from '../components/Delta'
 import Drill from '../components/Drill'
 import { Eyebrow, Panel } from '../components/ui'
-import { KIND_GROUPS, list } from '../lib/explore'
+import { KIND_GROUPS, list, opened } from '../lib/explore'
 import { naira, num } from '../lib/format'
 import { versus } from '../lib/insights'
 
@@ -64,6 +64,7 @@ export default function FlowScene({ data }) {
         <BigCard
           icon={UserPlus}
           label="New accounts opened"
+          to={opened()}
           value={data.new_accounts.today}
           {...versus(data, 'accounts_so_far', data.new_accounts.yesterday)}
           delay={0.2}
@@ -85,22 +86,24 @@ export default function FlowScene({ data }) {
   )
 }
 
-function BigCard({ icon: Icon, label, value, yesterday, compareLabel, extra, delay }) {
+function BigCard({ icon: Icon, label, to, value, yesterday, compareLabel, extra, delay }) {
   return (
     <Panel className="flex flex-1 flex-col justify-center-safe" delay={delay}>
-      <div className="flex items-center gap-3">
-        <Icon className="size-[clamp(16px,1.3vw,28px)] text-accent" />
-        <Eyebrow>{label}</Eyebrow>
-      </div>
-      <AnimatedNumber
-        value={value}
-        format={num}
-        className="mt-3 block text-[clamp(48px,6vw,130px)] leading-none font-semibold tracking-[-0.04em]"
-      />
-      <div className="mt-4 flex flex-wrap items-center gap-4">
-        <Delta today={value} yesterday={yesterday} label={compareLabel} />
-        {extra && <span className="text-[clamp(12px,0.95vw,20px)] text-muted">{extra}</span>}
-      </div>
+      <Drill to={to} className="-m-3 p-3">
+        <div className="flex items-center gap-3">
+          <Icon className="size-[clamp(16px,1.3vw,28px)] text-accent" />
+          <Eyebrow>{label}</Eyebrow>
+        </div>
+        <AnimatedNumber
+          value={value}
+          format={num}
+          className="mt-3 block text-[clamp(48px,6vw,130px)] leading-none font-semibold tracking-[-0.04em]"
+        />
+        <div className="mt-4 flex flex-wrap items-center gap-4">
+          <Delta today={value} yesterday={yesterday} label={compareLabel} />
+          {extra && <span className="text-[clamp(12px,0.95vw,20px)] text-muted">{extra}</span>}
+        </div>
+      </Drill>
     </Panel>
   )
 }

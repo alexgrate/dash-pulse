@@ -200,3 +200,5 @@ MS_GRAPH_CLIENT_SECRET = os.environ.get("MS_GRAPH_CLIENT_SECRET", "")
 MS_GRAPH_SENDER = os.environ.get("MS_GRAPH_SENDER", "")
 PULSE_PUBLIC_URL = os.environ.get("PULSE_PUBLIC_URL", "").rstrip("/")
 PASSWORD_RESET_TIMEOUT = 24 * 60 * 60
+
+PULSE_FAILURE_EMAILS = [e.strip() for e in os.environ.get("PULSE_FAILURE_EMAILS", "").split(",") if e.strip()]

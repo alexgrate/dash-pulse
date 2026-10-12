@@ -57,6 +57,7 @@ nssm restart DashPulse
    MS_GRAPH_CLIENT_ID=<Application (client) ID from Azure>
    MS_GRAPH_CLIENT_SECRET=<client secret value>
    MS_GRAPH_SENDER=robot@dash-mfb.com
+   PULSE_FAILURE_EMAILS=ops@dash-mfb.com,someone@dash-mfb.com
    ```
    The `MS_GRAPH_*` values send the "set your password" emails. The Azure app needs the **Mail.Send** application permission with admin consent, and the server needs outbound HTTPS to `login.microsoftonline.com` and `graph.microsoft.com`.
 4. Check the bank connection. It must print `'+00:00', 1, 5000` (UTC, read-only, 5-second query limit):
@@ -125,3 +126,20 @@ cd C:\sites\dash-pulse\backend
 | 502 | Service down: `nssm status DashPulse`, read `logs\dashpulse.log` |
 | Old screen after an update | `npm run build` was skipped, or hard-refresh with Ctrl+Shift+R |
 | Admin page has no styling | `collectstatic` was skipped |
+
+## Failed-transaction emails
+
+A second Windows service checks for failed transactions once a minute and emails the new ones to `PULSE_FAILURE_EMAILS` (comma-separated) through Microsoft Graph. "Insufficient funds" failures are left out; each email says how many were skipped. Every failure is emailed once. On its first run it marks earlier failures as seen, so nothing old is sent.
+
+```powershell
+cd C:\sites\dash-pulse\backend
+.venv\Scripts\python.exe manage.py migrate
+.venv\Scripts\python.exe manage.py pulse_failure_mails --once --dry-run
+nssm install DashPulseFailureMails "C:\sites\dash-pulse\backend\.venv\Scripts\python.exe" "manage.py pulse_failure_mails"
+nssm set DashPulseFailureMails AppDirectory C:\sites\dash-pulse\backend
+nssm set DashPulseFailureMails AppStdout C:\sites\dash-pulse\logs\failure-mails.log
+nssm set DashPulseFailureMails AppStderr C:\sites\dash-pulse\logs\failure-mails.log
+nssm start DashPulseFailureMails
+```
+
+After each `git pull`, restart it too: `nssm restart DashPulseFailureMails`. To pause the emails: `nssm stop DashPulseFailureMails`.

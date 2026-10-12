@@ -372,6 +372,54 @@ class ExploreAccessTests(TestCase):
         log = ExploreLog.objects.get()
         self.assertEqual((log.user, log.query, log.ip), (self.user, "status=FAILED", "10.0.0.5"))
 
+    def test_people_list_needs_explore_and_merges_accounts(self):
+        from datetime import datetime
+
+        from django.test import RequestFactory
+
+        from . import explore
+
+        rows = [
+            {"id": 1, "first": "Ada", "last": "Bello", "email": "Ada@x.com", "phone": "080", "phase": "ACCOUNT_CREATED",
+             "started": datetime(2026, 10, 1, 9, 0), "opened": datetime(2026, 10, 1, 9, 6)},
+            {"id": 2, "first": "Musa", "last": "Sani", "email": "musa@x.com", "phone": "081", "phase": "BVN_VALIDATION",
+             "started": datetime(2026, 10, 1, 9, 0), "opened": None},
+        ]
+        found = [{"email": "ada@x.com", "account_number": "0011", "status": "ACTIVE"}]
+
+        def call(query):
+            request = RequestFactory().get(f"/api/explore/people?{query}")
+            request.user = self.user
+            with patch("pulse.explore.fetch", side_effect=[[{"n": 2}], [dict(r) for r in rows], found]):
+                return explore.people(request)
+
+        self.assertEqual(call("mode=signups&date=2026-10-01").status_code, 403)
+        self.user.groups.add(self.group)
+        body = json.loads(call("mode=signups&date=2026-10-01&stage=bogus").content)
+        self.assertEqual((body["mode"], body["stage"], body["total"]), ("signups", None, 2))
+        ada, musa = body["items"]
+        self.assertEqual((ada["account"], ada["minutes_to_open"], ada["stage"]), ("0011", 6, "Account opened"))
+        self.assertEqual((musa["account"], musa["done"], musa["stage"]), (None, False, "Stuck at BVN check"))
+        self.assertEqual(json.loads(call("date=all").content)["date"], "all")
+
+    def test_money_in_list_adds_account_names(self):
+        from datetime import datetime
+
+        from django.test import RequestFactory
+
+        from . import explore
+
+        self.user.groups.add(self.group)
+        request = RequestFactory().get("/api/explore/money-in?date=2026-10-01")
+        request.user = self.user
+        rows = [{"provider_ref": "r1", "at": datetime(2026, 10, 1, 8, 0), "account": "0011", "amount": 5000,
+                 "narration": "Inward transfer"}]
+        side = [[{"n": 1, "value": 5000}], rows, [{"account_number": "0011", "account_name": "ADA BELLO"}]]
+        with patch("pulse.explore.fetch", side_effect=side):
+            body = json.loads(explore.money_in(request).content)
+        self.assertEqual((body["total"], body["value"]), (1, 5000.0))
+        self.assertEqual((body["items"][0]["name"], body["items"][0]["at"]), ("ADA BELLO", "2026-10-01T09:00:00"))
+
     def test_admin_alone_cannot_explore(self):
         self.user.is_staff = self.user.is_superuser = True
         self.user.save()
@@ -490,3 +538,51 @@ class PasswordEmailTests(TestCase):
         self.assertFalse(self.user.groups.filter(name="Explorer").exists())
         self.assertFalse(self.user.is_staff or self.user.is_superuser)
         self.assertTrue(self.user.check_password("old-Password-2026!"))
+
+
+class FailureMailTests(TestCase):
+    def rows(self, *ids):
+        from datetime import datetime
+
+        return [{"id": i, "at": datetime(2026, 10, 12, 10, 0, i), "kind": "INTER", "amount": 1000 * i,
+                 "account": "0011", "beneficiary": "Ada <b>", "bank": "OPAY", "reference": f"R{i}",
+                 "session_id": f"S{i}", "provider_code": "91",
+                 "message": "Insufficient funds (0011)" if i % 2 else "HTTP error occurred"} for i in ids]
+
+    def run_with(self, rows):
+        from .failure_mail import run_once
+
+        sent = []
+        with patch("pulse.failure_mail.recent_failures", return_value=rows), \
+             patch("pulse.failure_mail.lagos_now"), \
+             patch("pulse.failure_mail.mailer.send", side_effect=lambda to, s, h: sent.append((to, s, h))), \
+             self.settings(PULSE_FAILURE_EMAILS=["ops@dash-mfb.com", "md@dash-mfb.com"]):
+            run_once()
+        return sent
+
+    def test_first_run_skips_backlog_then_each_failure_is_mailed_once(self):
+        self.assertEqual(self.run_with(self.rows(1, 2)), [])
+        sent = self.run_with(self.rows(1, 2, 3, 4, 6))
+        self.assertEqual(len(sent), 1)
+        to, subject, html = sent[0]
+        self.assertEqual(to, ["ops@dash-mfb.com", "md@dash-mfb.com"])
+        self.assertIn("2 failed transactions", subject)
+        self.assertIn("R4", html)
+        self.assertIn("S6", html)
+        self.assertNotIn("R3", html)
+        self.assertIn("1 other failure for insufficient funds", html)
+        self.assertIn("Ada &lt;b&gt;", html)
+        self.assertEqual(self.run_with(self.rows(1, 2, 3, 4, 6, 7)), [])
+
+    def test_failed_send_is_retried_next_time(self):
+        from . import mailer
+        from .failure_mail import run_once
+
+        self.run_with(self.rows(2))
+        with patch("pulse.failure_mail.recent_failures", return_value=self.rows(2, 4)), \
+             patch("pulse.failure_mail.lagos_now"), \
+             patch("pulse.failure_mail.mailer.send", side_effect=mailer.MailError("down")), \
+             self.settings(PULSE_FAILURE_EMAILS=["ops@dash-mfb.com"]):
+            with self.assertRaises(mailer.MailError):
+                run_once()
+        self.assertEqual(len(self.run_with(self.rows(2, 4))), 1)
