@@ -48,7 +48,7 @@ def recent_failures(now):
     """, {"since": now - LOOKBACK, "now": now + timedelta(minutes=1)})
 
 
-SKIP_REASONS = {"Insufficient funds"}
+SKIP_REASONS = set()
 
 
 def worth_mailing(row):

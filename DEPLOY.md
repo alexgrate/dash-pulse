@@ -129,7 +129,7 @@ cd C:\sites\dash-pulse\backend
 
 ## Failed-transaction emails
 
-A second Windows service checks for failed transactions once a minute and emails the new ones to `PULSE_FAILURE_EMAILS` (comma-separated) through Microsoft Graph. "Insufficient funds" failures are left out; each email says how many were skipped. Every failure is emailed once. On its first run it marks earlier failures as seen, so nothing old is sent.
+A second Windows service checks for failed transactions once a minute and emails the new ones to `PULSE_FAILURE_EMAILS` (comma-separated) through Microsoft Graph. Every failure is included, insufficient funds too. Every failure is emailed once. On its first run it marks earlier failures as seen, so nothing old is sent.
 
 ```powershell
 cd C:\sites\dash-pulse\backend

@@ -118,4 +118,4 @@ Money in comes from `dashmfb-cba-mcs`.webhook_events, the notices NCUBE sends wh
 
 ## Failed-transaction emails (pulse/failure_mail.py)
 
-Uses the same FAILED rule as everywhere else. Looks back 2 hours each minute, skips IDs already in `FailureNotice`, leaves out the "Insufficient funds" reason, and sends one email per check. A failure is only recorded as sent after Graph accepts the email, so a failed send is retried on the next check. Records older than 7 days are pruned.
+Uses the same FAILED rule as everywhere else. Looks back 2 hours each minute, skips IDs already in `FailureNotice`, includes every failure reason, and sends one email per check. A failure is only recorded as sent after Graph accepts the email, so a failed send is retried on the next check. Records older than 7 days are pruned.

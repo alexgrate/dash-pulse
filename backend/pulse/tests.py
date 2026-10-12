@@ -566,12 +566,17 @@ class FailureMailTests(TestCase):
         self.assertEqual(len(sent), 1)
         to, subject, html = sent[0]
         self.assertEqual(to, ["ops@dash-mfb.com", "md@dash-mfb.com"])
-        self.assertIn("2 failed transactions", subject)
+        self.assertIn("3 failed transactions", subject)
+        self.assertIn("R3", html)
         self.assertIn("R4", html)
         self.assertIn("S6", html)
-        self.assertNotIn("R3", html)
-        self.assertIn("1 other failure for insufficient funds", html)
+        self.assertIn("Insufficient funds", html)
+        self.assertNotIn("R1", html)
         self.assertIn("Ada &lt;b&gt;", html)
+        again = self.run_with(self.rows(1, 2, 3, 4, 6, 7))
+        self.assertEqual(len(again), 1)
+        self.assertIn("R7", again[0][2])
+        self.assertNotIn("R6", again[0][2])
         self.assertEqual(self.run_with(self.rows(1, 2, 3, 4, 6, 7)), [])
 
     def test_failed_send_is_retried_next_time(self):
