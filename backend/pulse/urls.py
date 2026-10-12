@@ -9,6 +9,7 @@ urlpatterns = [
     path("explore/transactions/<int:tx_id>", explore.transaction),
     path("explore/onboarding", explore.onboarding),
     path("explore/people", explore.people),
+    path("explore/signup-history", explore.signup_history),
     path("explore/money-in", explore.money_in),
     path("auth/session", auth.session),
     path("auth/login", auth.sign_in),

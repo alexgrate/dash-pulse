@@ -6,6 +6,7 @@ import HealthScene from './HealthScene'
 import LiveScene from './LiveScene'
 import MapScene from './MapScene'
 import PulseScene from './PulseScene'
+import SignupsScene from './SignupsScene'
 import TrendsScene from './TrendsScene'
 
 export const scenes = [
@@ -16,6 +17,7 @@ export const scenes = [
   { id: 'banks', title: 'Banks & devices', seconds: 18, Component: BanksScene },
   { id: 'map', title: 'Map', seconds: 18, Component: MapScene },
   { id: 'funnel', title: 'Onboarding', seconds: 16, Component: FunnelScene },
+  { id: 'signups', title: 'Sign-ups', seconds: 16, Component: SignupsScene },
   { id: 'health', title: 'Health', seconds: 18, Component: HealthScene },
 ]
 

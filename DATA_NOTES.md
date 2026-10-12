@@ -119,3 +119,7 @@ Money in comes from `dashmfb-cba-mcs`.webhook_events, the notices NCUBE sends wh
 ## Failed-transaction emails (pulse/failure_mail.py)
 
 Uses the same FAILED rule as everywhere else. Looks back 2 hours each minute, skips IDs already in `FailureNotice`, includes every failure reason, and sends one email per check. A failure is only recorded as sent after Graph accepts the email, so a failed send is retried on the next check. Records older than 7 days are pruned.
+
+## Sign-ups tab (pulse/explore.py: build_signup_history)
+
+Day (last 30), week (last 12, Monday start) and month (last 12) totals, cached 5 minutes in the snapshot. Sign-ups count by `DATE_CREATED`; accounts opened by `ACCOUNT_OPENED_DATE`, so both match the other tabs. "Finished" is the share of that period's sign-ups that have an account now. In Explore mode, clicking a bar lists the people for that period.

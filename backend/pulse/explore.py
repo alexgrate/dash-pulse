@@ -304,6 +304,17 @@ def onboarding(request):
     return JsonResponse({"phase": phase, "label": PHASE_LABELS[phase], "scope": scope, **paged(items, request)})
 
 
+MAX_RANGE_DAYS = 400
+
+
+def parse_range_end(start, value):
+    try:
+        end = date.fromisoformat(value)
+    except (TypeError, ValueError):
+        return start
+    return min(max(end, start), start + timedelta(days=MAX_RANGE_DAYS))
+
+
 STAGE_FILTERS = {
     "opened": "o.ACCOUNT_OPENED_DATE IS NOT NULL",
     "not_opened": "o.ACCOUNT_OPENED_DATE IS NULL",
@@ -324,6 +335,7 @@ def people(request):
     mode = "signups" if g.get("mode") == "signups" else "opened"
     all_time = mode == "opened" and g.get("date") == "all"
     day = None if all_time else parse_day(g.get("date"))
+    until = parse_range_end(day, g.get("until")) if day else None
     column = "o.DATE_CREATED" if mode == "signups" else "o.ACCOUNT_OPENED_DATE"
 
     where, params = [], {}
@@ -332,7 +344,7 @@ def people(request):
     else:
         start = datetime.combine(day, datetime.min.time())
         where.append(f"{column} >= %(start)s AND {column} < %(end)s")
-        params.update(start=start, end=start + timedelta(days=1))
+        params.update(start=start, end=datetime.combine(until, datetime.min.time()) + timedelta(days=1))
     stage = g.get("stage") if mode == "signups" and g.get("stage") in STAGE_FILTERS else None
     if stage:
         where.append(STAGE_FILTERS[stage])
@@ -396,6 +408,7 @@ def people(request):
     return JsonResponse({
         "mode": mode,
         "date": "all" if all_time else day.isoformat(),
+        "until": until.isoformat() if until and until != day else None,
         "stage": stage,
         "total": total,
         "page": page,
@@ -451,3 +464,69 @@ def money_in(request):
             "narration": r["narration"],
         } for r in rows],
     })
+
+
+HISTORY = {"day": 30, "week": 12, "month": 12}
+
+
+def period_start(d, by):
+    if by == "week":
+        return d - timedelta(days=d.weekday())
+    if by == "month":
+        return d.replace(day=1)
+    return d
+
+
+def period_end(start, by):
+    if by == "week":
+        return start + timedelta(days=6)
+    if by == "month":
+        following = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
+        return following - timedelta(days=1)
+    return start
+
+
+def history_periods(today, by):
+    periods, cursor = [], period_start(today, by)
+    for _ in range(HISTORY[by]):
+        periods.append(cursor)
+        cursor = period_start(cursor - timedelta(days=1), by)
+    return periods
+
+
+def build_signup_history(today, by):
+    periods = history_periods(today, by)
+    since = datetime.combine(periods[-1], datetime.min.time())
+    started = fetch(f"""
+        SELECT DATE(DATE_CREATED) AS d, COUNT(*) AS n, SUM(ACCOUNT_OPENED_DATE IS NOT NULL) AS finished
+        FROM {ONBOARDING} WHERE DATE_CREATED >= %(since)s GROUP BY d
+    """, {"since": since})
+    opened = fetch(f"""
+        SELECT DATE(ACCOUNT_OPENED_DATE) AS d, COUNT(*) AS n
+        FROM {ONBOARDING} WHERE ACCOUNT_OPENED_DATE >= %(since)s GROUP BY d
+    """, {"since": since})
+    rows = {p: {"signups": 0, "finished": 0, "opened": 0} for p in periods}
+    for r in started:
+        key = period_start(r["d"], by)
+        if key in rows:
+            rows[key]["signups"] += int(r["n"])
+            rows[key]["finished"] += int(r["finished"] or 0)
+    for r in opened:
+        key = period_start(r["d"], by)
+        if key in rows:
+            rows[key]["opened"] += int(r["n"])
+    return [{
+        "start": p.isoformat(),
+        "end": min(period_end(p, by), today).isoformat(),
+        "current": period_end(p, by) >= today,
+        **rows[p],
+        "finished_share": round(rows[p]["finished"] / rows[p]["signups"], 4) if rows[p]["signups"] else None,
+    } for p in periods]
+
+
+@require_GET
+@explorer_required
+@unavailable
+def signup_history(request):
+    by = request.GET.get("by") if request.GET.get("by") in HISTORY else "day"
+    return JsonResponse({"by": by, "items": build_signup_history(lagos_now().date(), by)})

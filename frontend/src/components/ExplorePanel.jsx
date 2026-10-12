@@ -14,7 +14,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { kindLabel, list, MONEY_OUT_KINDS, tx } from '../lib/explore'
-import { num } from '../lib/format'
+import { num, pct } from '../lib/format'
 
 const OUTCOME = {
   SUCCESS: { icon: CheckCircle2, tone: 'text-good', bg: 'bg-good/10', label: 'Successful' },
@@ -146,6 +146,13 @@ export default function ExplorePanel({ stack, setStack }) {
                   frame={top}
                   onChange={(f) => replace({ ...top, ...f })}
                   onOpen={(account, date) => push(list({ date, search: account }))}
+                />
+              )}
+              {top.type === 'signup-history' && (
+                <SignupHistoryView
+                  frame={top}
+                  onChange={(f) => replace({ ...top, ...f })}
+                  onOpen={(start, end) => push({ type: 'people', mode: 'signups', date: start, until: end })}
                 />
               )}
               {top.type === 'people' && (
@@ -503,6 +510,9 @@ function TxView({ id, onOpen }) {
 const dayName = (iso) =>
   new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
 
+const shortDay = (iso) =>
+  new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+
 const shiftDay = (iso, days) => {
   const d = new Date(`${iso}T12:00:00Z`)
   d.setUTCDate(d.getUTCDate() + days)
@@ -525,13 +535,16 @@ function PeopleView({ frame, onChange, onOpen }) {
   const copy = PEOPLE_COPY[f.mode]
   const allTime = f.date === 'all'
   const { data, loading, error } = useApi(
-    `/api/explore/people?${query({ mode: f.mode, date: f.date, stage: f.stage, search: f.search, page: f.page })}`,
+    `/api/explore/people?${query({ mode: f.mode, date: f.date, until: f.until, stage: f.stage, search: f.search, page: f.page })}`,
   )
   const set = (patch) => onChange({ ...patch, page: patch.page ?? 1 })
   const isToday = f.date === todayIso()
+  const ranged = Boolean(f.until && f.until !== f.date)
   const title = allTime
     ? 'All accounts ever opened'
-    : `${f.mode === 'opened' ? 'Accounts opened' : 'Sign-ups'} ${isToday ? 'today' : `on ${dayName(f.date)}`}`
+    : ranged
+      ? `Sign-ups ${shortDay(f.date)} – ${shortDay(f.until)}`
+      : `${f.mode === 'opened' ? 'Accounts opened' : 'Sign-ups'} ${isToday ? 'today' : `on ${dayName(f.date)}`}`
   const pill = (on) =>
     `rounded-full px-3 py-1 text-xs ${on ? 'bg-brand text-white ring-1 ring-brand-soft/40' : 'bg-white/5 text-muted hover:text-slate-100'}`
   const step =
@@ -567,7 +580,7 @@ function PeopleView({ frame, onChange, onOpen }) {
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {!allTime && (
+        {!allTime && !ranged && (
           <>
             <button type="button" className={step} onClick={() => set({ date: shiftDay(f.date, -1) })}>
               ← Day before
@@ -741,6 +754,115 @@ function MoneyInView({ frame, onChange, onOpen }) {
             ))}
           </div>
           <Pager page={data.page} pages={data.pages} onPage={(page) => set({ page })} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+const HISTORY_TABS = [
+  ['day', 'Day by day'],
+  ['week', 'Week by week'],
+  ['month', 'Month by month'],
+]
+
+function periodLabel(item, by) {
+  const start = new Date(`${item.start}T12:00:00Z`)
+  if (by === 'month') return start.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  if (by === 'week') {
+    const end = new Date(`${item.end}T12:00:00Z`)
+    const fmt = { day: 'numeric', month: 'short' }
+    return `${start.toLocaleDateString('en-GB', fmt)} – ${item.current ? 'today' : end.toLocaleDateString('en-GB', fmt)}`
+  }
+  return start.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
+function SignupHistoryView({ frame, onChange, onOpen }) {
+  const by = frame.by ?? 'day'
+  const { data, loading, error } = useApi(`/api/explore/signup-history?by=${by}`)
+  const items = data?.items ?? []
+  const max = Math.max(1, ...items.map((i) => i.signups))
+  const totals = items.reduce(
+    (t, i) => ({ signups: t.signups + i.signups, opened: t.opened + i.opened, finished: t.finished + i.finished }),
+    { signups: 0, opened: 0, finished: 0 },
+  )
+  const cols = 'grid grid-cols-[minmax(0,1.3fr)_minmax(0,1.6fr)_4.5rem_4.5rem_4rem] items-center gap-3'
+  const span = { day: 'last 30 days', week: 'last 12 weeks', month: 'last 12 months' }[by]
+  return (
+    <div>
+      <div className="text-xs tracking-[0.18em] text-muted uppercase">Sign-ups</div>
+      <h2 className="mt-1 text-2xl font-semibold tracking-tight">Sign-ups over time</h2>
+      <div className="mt-4 flex flex-wrap gap-1.5">
+        {HISTORY_TABS.map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => onChange({ by: value })}
+            className={`rounded-full px-3 py-1 text-xs ${
+              by === value
+                ? 'bg-brand text-white ring-1 ring-brand-soft/40'
+                : 'bg-white/5 text-muted hover:text-slate-100'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {!data ? (
+        <Loading error={error} />
+      ) : (
+        <div className={loading ? 'opacity-50' : ''}>
+          <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+            {[
+              ['Sign-ups', num(totals.signups), 'text-slate-100'],
+              ['Accounts opened', num(totals.opened), 'text-good'],
+              ['Finished', totals.signups ? pct(totals.finished / totals.signups, 0) : '—', 'text-accent'],
+            ].map(([label, value, tone]) => (
+              <div key={label} className="rounded-xl bg-white/[0.03] py-2">
+                <div className={`tabular text-lg font-semibold ${tone}`}>{value}</div>
+                <div className="text-xs text-muted">
+                  {label} · {span}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 text-xs text-muted">
+            Finished: of the people who started in that period, how many have an account now. Click a row to see the
+            people.
+          </div>
+          <div className="mt-3 overflow-hidden rounded-2xl border border-white/10">
+            <div className={`${cols} bg-white/[0.03] px-4 py-2 text-[11px] tracking-[0.14em] text-muted uppercase`}>
+              <span>{by === 'day' ? 'Day' : by === 'week' ? 'Week' : 'Month'}</span>
+              <span />
+              <span className="text-right">Sign-ups</span>
+              <span className="text-right">Opened</span>
+              <span className="text-right">Finished</span>
+            </div>
+            {items.map((i) => (
+              <button
+                key={i.start}
+                type="button"
+                onClick={() => onOpen(i.start, i.end)}
+                className={`${cols} w-full border-t border-white/5 px-4 py-2.5 text-left text-sm transition hover:bg-white/[0.04]`}
+              >
+                <span className="truncate text-slate-100">
+                  {periodLabel(i, by)}
+                  {i.current && <span className="ml-1.5 text-xs text-brand-soft">so far</span>}
+                </span>
+                <span className="h-2 overflow-hidden rounded-full bg-white/5">
+                  <span
+                    className="block h-full rounded-full bg-accent/80"
+                    style={{ width: `${(i.signups / max) * 100}%` }}
+                  />
+                </span>
+                <span className="tabular text-right text-slate-100">{num(i.signups)}</span>
+                <span className="tabular text-right text-good">{num(i.opened)}</span>
+                <span className="tabular text-right text-muted">
+                  {i.finished_share == null ? '—' : pct(i.finished_share, 0)}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>

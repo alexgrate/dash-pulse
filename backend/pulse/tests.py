@@ -591,3 +591,30 @@ class FailureMailTests(TestCase):
             with self.assertRaises(mailer.MailError):
                 run_once()
         self.assertEqual(len(self.run_with(self.rows(2, 4))), 1)
+
+
+class SignupHistoryTests(SimpleTestCase):
+    def test_periods_start_on_monday_and_first_of_month(self):
+        from datetime import date
+
+        from .explore import history_periods, period_end, period_start
+
+        wed = date(2026, 10, 14)
+        self.assertEqual(period_start(wed, "week"), date(2026, 10, 12))
+        self.assertEqual(period_end(date(2026, 10, 12), "week"), date(2026, 10, 18))
+        self.assertEqual(period_end(date(2026, 2, 1), "month"), date(2026, 2, 28))
+        self.assertEqual(period_end(date(2026, 12, 1), "month"), date(2026, 12, 31))
+        months = history_periods(wed, "month")
+        self.assertEqual((len(months), months[0], months[-1]), (12, date(2026, 10, 1), date(2025, 11, 1)))
+        self.assertEqual(len(set(history_periods(wed, "day"))), 30)
+
+    def test_range_end_is_clamped(self):
+        from datetime import date
+
+        from .explore import parse_range_end
+
+        start = date(2026, 10, 1)
+        self.assertEqual(parse_range_end(start, None), start)
+        self.assertEqual(parse_range_end(start, "2026-09-01"), start)
+        self.assertEqual(parse_range_end(start, "2026-10-07"), date(2026, 10, 7))
+        self.assertEqual(parse_range_end(start, "2030-01-01"), date(2027, 11, 5))
