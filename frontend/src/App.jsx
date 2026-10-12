@@ -23,7 +23,19 @@ export default function App() {
   const [stack, setStack] = useState([])
   const exploring = signedIn && session.canExplore && exploreOn
   useIdleCursor(!exploring)
-  const explore = useMemo(() => ({ enabled: exploring, open: (to) => setStack([to]) }), [exploring])
+  const allowed = signedIn && session.canExplore
+  const explore = useMemo(
+    () => ({
+      enabled: exploring,
+      allowed,
+      open: (to) => setStack([to]),
+      openNow: (to) => {
+        setExploreOn(true)
+        setStack([to])
+      },
+    }),
+    [exploring, allowed],
+  )
   const { data, offline, clockOffset } = usePulse(signedIn, session.expired)
   const [sceneId, setSceneId] = useState(null)
   const alert = Boolean(data?.health?.alert)

@@ -22,53 +22,85 @@ const TITLES = {
 }
 
 const PERIOD = { day: 'day', week: 'week', month: 'month' }
-const THIS = { day: 'today', week: 'this week', month: 'this month' }
-const LAST = { day: 'yesterday', week: 'last week', month: 'last month' }
+
+const short = (n) => (n >= 10000 ? `${(n / 1000).toFixed(n >= 100000 ? 0 : 1)}k` : num(n))
+
+const people = (p) => ({ type: 'people', mode: 'signups', date: p.start, until: p.end })
 
 export default function SignupsScene({ data }) {
   const h = data.signup_history
+  const { allowed, openNow } = useExplore()
   if (!h) return <div className="grid h-full place-items-center text-muted">Building the sign-up history…</div>
+  const pick = allowed ? (p) => openNow(people(p)) : undefined
+  const cards = [
+    ['Today', h.day[0], 'so far'],
+    ['Yesterday', h.day[1]],
+    ['This week', h.week[0], 'so far'],
+    ['Last week', h.week[1]],
+    ['This month', h.month[0], 'so far'],
+    ['Last month', h.month[1]],
+  ]
   return (
-    <div className="grid h-full grid-cols-2 grid-rows-[minmax(0,1.1fr)_minmax(0,1fr)] gap-[1.6vw]">
-      <History by="day" items={h.day} title="Day by day" span="last 30 days" className="col-span-2" delay={0} />
-      <History by="week" items={h.week} title="Week by week" span="last 12 weeks" delay={0.15} />
-      <History by="month" items={h.month} title="Month by month" span="last 12 months" delay={0.3} />
+    <div className="flex h-full flex-col gap-[1.2vw]">
+      <div className="grid shrink-0 grid-cols-6 gap-[1vw]">
+        {cards.map(([label, p, note], i) => (
+          <Summary key={label} label={label} note={note} period={p} onPick={pick} delay={i * 0.05} />
+        ))}
+      </div>
+      <History by="day" items={h.day} title="Day by day" span="last 30 days" onPick={pick} delay={0.3} />
+      <div className="grid min-h-0 flex-1 grid-cols-2 gap-[1.2vw]">
+        <History by="week" items={h.week} title="Week by week" span="last 12 weeks" onPick={pick} delay={0.4} />
+        <History by="month" items={h.month} title="Month by month" span="last 12 months" onPick={pick} delay={0.5} />
+      </div>
     </div>
   )
 }
 
-function History({ by, items, title, span, className = '', delay }) {
-  const { enabled, open } = useExplore()
+function Summary({ label, note, period, onPick, delay }) {
+  if (!period) return <Panel delay={delay} />
+  const body = (
+    <>
+      <div className="flex items-baseline justify-between gap-2">
+        <Eyebrow>{label}</Eyebrow>
+        {note && <span className="text-[clamp(9px,0.65vw,13px)] text-brand-soft">{note}</span>}
+      </div>
+      <div className="tabular mt-1 text-[clamp(22px,2.2vw,46px)] leading-none font-semibold">{num(period.signups)}</div>
+      <div className="mt-1 text-[clamp(10px,0.8vw,16px)] leading-snug text-muted">
+        sign-ups · <span className="text-good">{num(period.opened)} opened</span>
+        {period.finished_share != null && <> · {pct(period.finished_share, 0)} finished</>}
+      </div>
+    </>
+  )
+  return (
+    <Panel className="!py-[min(1.2vw,1.8vh)]" delay={delay}>
+      {onPick ? (
+        <button
+          type="button"
+          onClick={() => onPick(period)}
+          className="-m-2 block w-[calc(100%+1rem)] cursor-pointer rounded-xl p-2 text-left transition hover:bg-white/[0.05] hover:ring-2 hover:ring-brand-soft/40"
+        >
+          {body}
+        </button>
+      ) : (
+        body
+      )}
+    </Panel>
+  )
+}
+
+function History({ by, items, title, span, onPick, delay }) {
   const series = [...items].reverse()
   const max = Math.max(1, ...series.map((i) => i.signups))
-  const latest = series.at(-1)
-  const previous = series.at(-2)
-  const labelEvery = Math.ceil(series.length / (by === 'day' ? 10 : 12))
+  const labelEvery = by === 'day' ? 2 : 1
 
   return (
-    <Panel className={`flex min-h-0 flex-col ${className}`} delay={delay}>
-      <div className="flex items-start justify-between gap-6">
-        <div>
-          <Eyebrow>
-            {title} · {span}
-          </Eyebrow>
-          <div className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-            <span className="tabular text-[clamp(20px,2vw,42px)] leading-tight font-semibold">
-              {num(latest?.signups)}
-            </span>
-            <span className="text-[clamp(11px,0.85vw,17px)] text-muted">
-              sign-ups {THIS[by]}
-              {latest?.current ? ' so far' : ''} · <span className="text-good">{num(latest?.opened)} opened</span>
-              {previous && (
-                <>
-                  {' '}
-                  · {LAST[by]} {num(previous.signups)}
-                </>
-              )}
-            </span>
-          </div>
-        </div>
-        <div className="flex shrink-0 gap-4 text-[clamp(10px,0.75vw,15px)] text-muted">
+    <Panel className="flex min-h-0 flex-1 flex-col !py-[min(1.2vw,1.8vh)]" delay={delay}>
+      <div className="flex items-center justify-between gap-6">
+        <Eyebrow>
+          {title} · {span}
+        </Eyebrow>
+        <div className="flex shrink-0 items-center gap-4 text-[clamp(10px,0.75vw,15px)] text-muted">
+          {onPick && by === 'day' && <span className="text-brand-soft">Click any card or bar to see the people</span>}
           <span className="flex items-center gap-1.5">
             <span className="size-2.5 rounded-sm bg-accent/35" /> Sign-ups
           </span>
@@ -80,12 +112,8 @@ function History({ by, items, title, span, className = '', delay }) {
 
       <ChartHover
         count={series.length}
-        className="mt-[1.5vh] min-h-0 flex-1"
-        onPick={
-          enabled
-            ? (i) => open({ type: 'people', mode: 'signups', date: series[i].start, until: series[i].end })
-            : undefined
-        }
+        className="mt-[1vh] min-h-0 flex-1"
+        onPick={onPick ? (i) => onPick(series[i]) : undefined}
         render={(i) => {
           const p = series[i]
           return (
@@ -99,7 +127,7 @@ function History({ by, items, title, span, className = '', delay }) {
               <TipRow label="Finished" value={p.finished_share == null ? '—' : pct(p.finished_share, 0)} />
               <TipNote>
                 Finished: of the people who started in this {PERIOD[by]}, how many have an account now.
-                {enabled ? ' Click to see the people.' : ''}
+                {onPick ? ' Click to see the people.' : ''}
               </TipNote>
             </>
           )
@@ -110,19 +138,27 @@ function History({ by, items, title, span, className = '', delay }) {
             <div key={p.start} className="flex h-full min-w-0 flex-1 flex-col justify-end">
               <div className="relative flex-1">
                 <motion.div
-                  className="absolute inset-x-0 bottom-0 rounded-t-[4px] bg-accent/35"
+                  className="absolute inset-x-0 bottom-0 flex flex-col justify-end"
                   initial={{ height: 0 }}
-                  animate={{ height: `${(p.signups / max) * 100}%` }}
+                  animate={{ height: `${Math.max((p.signups / max) * 82, 1)}%` }}
                   transition={{ duration: 1, delay: delay + i * 0.015, ease: EASE }}
-                />
+                >
+                  <div className="tabular mb-0.5 text-center text-[clamp(9px,0.68vw,14px)] leading-none whitespace-nowrap text-slate-200">
+                    {short(p.signups)}
+                  </div>
+                  <div className={`min-h-0 flex-1 rounded-t-[4px] ${p.current ? 'bg-accent/55' : 'bg-accent/35'}`} />
+                </motion.div>
                 <motion.div
                   className="absolute inset-x-[18%] bottom-0 rounded-t-[3px] bg-good"
                   initial={{ height: 0 }}
-                  animate={{ height: `${(p.opened / max) * 100}%` }}
+                  animate={{ height: `${(p.opened / max) * 82}%` }}
                   transition={{ duration: 1, delay: delay + 0.2 + i * 0.015, ease: EASE }}
                 />
               </div>
-              <div className="mt-1.5 h-[1.3em] truncate text-center font-mono text-[clamp(9px,0.65vw,13px)] text-muted">
+              <div className="tabular mt-1 truncate text-center text-[clamp(8px,0.62vw,13px)] leading-none text-good">
+                {short(p.opened)}
+              </div>
+              <div className="mt-1 h-[1.2em] truncate text-center font-mono text-[clamp(8px,0.6vw,12px)] text-muted">
                 {i % labelEvery === 0 || i === series.length - 1 ? LABELS[by](p) : ''}
               </div>
             </div>
