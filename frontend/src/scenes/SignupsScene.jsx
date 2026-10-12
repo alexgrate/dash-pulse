@@ -90,7 +90,7 @@ function Summary({ label, note, period, onPick, delay }) {
 
 function History({ by, items, title, span, onPick, delay }) {
   const series = [...items].reverse()
-  const max = Math.max(1, ...series.map((i) => i.signups))
+  const max = Math.max(1, ...series.map((i) => Math.max(i.signups, i.opened)))
   const labelEvery = by === 'day' ? 2 : 1
 
   return (
@@ -138,22 +138,25 @@ function History({ by, items, title, span, onPick, delay }) {
             <div key={p.start} className="flex h-full min-w-0 flex-1 flex-col justify-end">
               <div className="relative flex-1">
                 <motion.div
-                  className="absolute inset-x-0 bottom-0 flex flex-col justify-end"
+                  className={`absolute inset-x-0 bottom-0 rounded-t-[4px] ${p.current ? 'bg-accent/55' : 'bg-accent/35'}`}
                   initial={{ height: 0 }}
-                  animate={{ height: `${Math.max((p.signups / max) * 82, 1)}%` }}
+                  animate={{ height: `${Math.max((p.signups / max) * 82, 0.6)}%` }}
                   transition={{ duration: 1, delay: delay + i * 0.015, ease: EASE }}
-                >
-                  <div className="tabular mb-0.5 text-center text-[clamp(9px,0.68vw,14px)] leading-none whitespace-nowrap text-slate-200">
-                    {short(p.signups)}
-                  </div>
-                  <div className={`min-h-0 flex-1 rounded-t-[4px] ${p.current ? 'bg-accent/55' : 'bg-accent/35'}`} />
-                </motion.div>
+                />
                 <motion.div
                   className="absolute inset-x-[18%] bottom-0 rounded-t-[3px] bg-good"
                   initial={{ height: 0 }}
                   animate={{ height: `${(p.opened / max) * 82}%` }}
                   transition={{ duration: 1, delay: delay + 0.2 + i * 0.015, ease: EASE }}
                 />
+                <motion.div
+                  className="tabular absolute inset-x-0 pb-0.5 text-center text-[clamp(9px,0.68vw,14px)] leading-none whitespace-nowrap text-slate-200"
+                  initial={{ bottom: 0, opacity: 0 }}
+                  animate={{ bottom: `${(Math.max(p.signups, p.opened) / max) * 82}%`, opacity: 1 }}
+                  transition={{ duration: 1, delay: delay + i * 0.015, ease: EASE }}
+                >
+                  {short(p.signups)}
+                </motion.div>
               </div>
               <div className="tabular mt-1 truncate text-center text-[clamp(8px,0.62vw,13px)] leading-none text-good">
                 {short(p.opened)}
