@@ -340,7 +340,8 @@ def people(request):
 
     where, params = [], {}
     if all_time:
-        where.append("o.ACCOUNT_OPENED_DATE IS NOT NULL")
+        where.append("(o.ONBOARDING_PHASE = 'ACCOUNT_CREATED' OR o.ACCOUNT_OPENED_DATE IS NOT NULL)")
+        column = "COALESCE(o.ACCOUNT_OPENED_DATE, o.DATE_UPDATED, o.DATE_CREATED)"
     else:
         start = datetime.combine(day, datetime.min.time())
         where.append(f"{column} >= %(start)s AND {column} < %(end)s")
