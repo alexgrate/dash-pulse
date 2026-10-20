@@ -630,11 +630,13 @@ def fake_report_period(start, end):
     for i, d in enumerate(p.dates()):
         series.append({"date": d, "transactions": 100 + i, "success": 80, "failed": 15 + i % 3, "reversed": 2,
                        "pending": 3 + i, "settled": 97, "success_rate": 0.82, "value": 1_500_000.0 + i,
-                       "money_in": 900_000.0, "money_in_count": 40, "signups": 60 + (200 if i == 3 else 0),
+                       "money_in": 900_000.0, "money_in_count": 40, "money_in_other": 50_000.0,
+                       "money_in_other_count": 1, "signups": 60 + (200 if i == 3 else 0),
                        "finished": 20, "accounts": 0 if i == 5 else 22})
     totals = {"transactions": 1200, "success": 960, "failed": 190, "reversed": 24, "pending": 26, "settled": 1174,
               "success_rate": 0.8177, "failure_rate": 0.1618, "value": 18_000_000.0, "average_value": 18_750.0,
-              "money_in": 10_800_000.0, "money_in_count": 480, "signups": 920, "accounts": 240,
+              "money_in": 10_800_000.0, "money_in_count": 480, "money_in_other": 600_000.0,
+              "money_in_other_count": 12, "signups": 920, "accounts": 240,
               "finish_rate": 0.3, "active_users": 700, "rewards_count": 50, "rewards_value": 15_000.0}
     reasons = [{"reason": "Insufficient funds", "side": "Customer", "count": 120, "value": 900_000.0, "absurd": 1,
                 "days": {p.start: 60, p.end: 60}, "share": 0.63, "hint": "Customers had no money.",
@@ -669,7 +671,9 @@ class ReportTests(TestCase):
             return fake.setdefault(key, fake_report_period(*key)[1])
 
         for target, value in (("pulse.report_data.collect", collect),
-                              ("pulse.report_data.availability", lambda cur, prev: ["A data note."]),
+                              ("pulse.report_data.availability", lambda cur, prev, since: ["A data note."]),
+                              ("pulse.report_data.recorded_from",
+                               lambda: {"accounts": __import__("datetime").date(2026, 9, 25)}),
                               ("pulse.report_data.lagos_now", lambda: __import__("datetime").datetime(2026, 10, 20, 9))):
             patcher = patch(target, side_effect=value) if callable(value) else patch(target, value)
             patcher.start()
@@ -745,6 +749,12 @@ class ReportTests(TestCase):
         self.assertIn("No accounts opened", kinds)
         self.assertIn("Sign-up spike", kinds)
         self.assertEqual(report["notes"], ["A data note."])
+        self.assertIn("no fair comparison", text)
+        self.assertIn("Success rate held at 81.8%", text)
+        rows = {r["key"]: r for r in report["comparison"]}
+        self.assertEqual((rows["accounts"]["comparable"], rows["accounts"]["change"]), (False, None))
+        self.assertTrue(rows["money_in"]["comparable"])
+        self.assertEqual(rows["money_in_other"]["now"], 600_000.0)
 
 
 class ReportRuleTests(SimpleTestCase):
@@ -753,6 +763,10 @@ class ReportRuleTests(SimpleTestCase):
         self.assertEqual(classify("Destination System malfunction"), ("Receiving bank is down", "system"))
         self.assertEqual(classify("Account Name Mismatch")[1], "customer")
         self.assertEqual(classify("An unexpected error occurred. Please contact support.")[0], "Our system had an error")
+        self.assertEqual(classify("Rejected by destination Institution")[0], "Receiving bank refused it")
+        self.assertEqual(classify("Source institution not profiled by the destination institution")[0],
+                         "Receiving bank refused it")
+        self.assertEqual(classify("Incorrect Transaction message")[0], "Our app sent a faulty request")
 
     def test_availability_warns_about_small_base_and_absurd_amounts(self):
         from .report_data import availability
@@ -760,8 +774,11 @@ class ReportRuleTests(SimpleTestCase):
         _, cur = fake_report_period("2026-07-01", "2026-09-30")
         _, prev = fake_report_period("2026-03-31", "2026-06-30")
         prev["totals"] = {**prev["totals"], "transactions": 100}
-        with patch("pulse.report_data.fetch", return_value=[{"d": None}]), \
-             patch("pulse.report_data.lagos_now", return_value=__import__("datetime").datetime(2026, 10, 20, 9)):
-            notes = availability(cur, prev)
+        from datetime import date, datetime
+
+        with patch("pulse.report_data.lagos_now", return_value=datetime(2026, 10, 20, 9)):
+            notes = availability(cur, prev, {"accounts": date(2026, 6, 17), "money_in": date(2026, 6, 17)})
         self.assertTrue(any("small starting point" in n for n in notes))
         self.assertTrue(any("impossible amounts" in n for n in notes))
+        self.assertTrue(any("not comparable" in n and "Account opening" in n for n in notes))
+        self.assertTrue(any("NGN 600,000" in n and "not app customers" in n for n in notes))

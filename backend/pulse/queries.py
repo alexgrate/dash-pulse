@@ -258,6 +258,7 @@ def money_in(w_utc):
                 WHERE created_at >= %(today)s AND created_at < %(now)s
                   AND JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.drCr')) = 'CR'
                   AND JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.service')) = 'INWARD'
+                  AND account_number IN (SELECT account_number FROM {ACCOUNTS})
                 GROUP BY provider_ref
             ) credits
         """, w_utc)[0]

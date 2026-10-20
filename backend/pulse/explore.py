@@ -428,7 +428,8 @@ def money_in(request):
     params = {"start": start, "end": start + timedelta(days=1)}
     where = ["created_at >= %(start)s", "created_at < %(end)s",
              "JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.drCr')) = 'CR'",
-             "JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.service')) = 'INWARD'"]
+             "JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.service')) = 'INWARD'",
+             f"account_number IN (SELECT account_number FROM {ACCOUNTS})"]
     for n, word in enumerate((g.get("search") or "").lower().split()[:5]):
         params[f"w{n}"] = f"%{word}%"
         where.append(f"LOWER(CONCAT_WS(' ', account_number, provider_ref, "

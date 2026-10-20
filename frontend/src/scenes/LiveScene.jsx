@@ -215,7 +215,11 @@ function TodayPanel({ data }) {
           to={moneyInList()}
           label="Money in"
           value={moneyIn ? naira(moneyIn.value) : '—'}
-          note={moneyIn ? `${num(moneyIn.count)} transfers received from other banks.` : 'Not available right now.'}
+          note={
+            moneyIn
+              ? `${num(moneyIn.count)} transfers from other banks into customers' accounts.`
+              : 'Not available right now.'
+          }
         />
         <TodayFigure
           to={list({ status: 'SUCCESS', kinds: MONEY_OUT_KINDS })}

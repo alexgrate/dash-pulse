@@ -89,6 +89,8 @@ def fmt(kind, v):
 
 
 def change_text(row):
+    if not row.get("comparable", True):
+        return "not comparable", MUTED
     c = row["change"]
     if c is None:
         return "n/a", MUTED
@@ -232,7 +234,8 @@ def kpi_cards(report):
         cells.append([
             p(escape(r["metric"].upper()), "kpi_label"),
             p(escape(value), "kpi"),
-            p(f'<font color="{hexcolor(color)}">{text}</font> vs previous', "cell_muted"),
+            p(f'<font color="{hexcolor(color)}">{text}</font>'
+              f'{" vs previous" if r.get("comparable", True) else ""}', "cell_muted"),
         ])
     grid = []
     for i in range(0, len(cells), 4):
@@ -335,9 +338,15 @@ def build_pdf(report):
     lines = [f"Customers successfully sent <b>{money(t['value'])}</b> out of their accounts "
              f"(average <b>{money(t['average_value'])}</b> per successful transaction)."]
     if t["money_in"] is not None:
-        net = t["money_in"] - t["value"]
-        lines.append(f"<b>{money(t['money_in'])}</b> arrived from other banks in <b>{num(t['money_in_count'])}</b> "
-                     f"transfers. Net flow was <b>{'+' if net >= 0 else '−'}{money(abs(net))}</b>.")
+        lines.append(f"<b>{money(t['money_in'])}</b> arrived from other banks into customers' accounts in "
+                     f"<b>{num(t['money_in_count'])}</b> transfers.")
+        if t["money_in_other"]:
+            lines.append(f"A further <b>{money(t['money_in_other'])}</b> arrived in "
+                         f"<b>{num(t['money_in_other_count'])}</b> transfers into Dash accounts that are not app "
+                         f"customers, such as treasury or fixed-deposit accounts; it is left out of money in.")
+        lines.append("Money sent covers only what customers send through the app, while some customers also "
+                     "move money out through internet banking or the branch, so the two figures should not be "
+                     "netted against each other.")
     story.append(p(" ".join(lines)))
     story.append(Spacer(1, 3 * mm))
     money_series = [("Money sent (NGN m)", [b["value"] / 1e6 for b in buckets], BRAND)]
@@ -416,8 +425,15 @@ def build_pdf(report):
                   [("Sign-ups started", [b["signups"] for b in buckets], BLUE),
                    ("Accounts opened", [b["accounts"] for b in buckets], GREEN)]),
     ]))
+    funnel_note = []
+    if cur["funnel"] and cur["funnel"][-1]["count"] != t["accounts"]:
+        funnel_note = [p(f"The funnel follows only the people who started in this period, so its last step "
+                         f"({num(cur['funnel'][-1]['count'])}) differs slightly from accounts opened "
+                         f"({num(t['accounts'])}), which also counts people who started earlier.", "note"),
+                       Spacer(1, 2 * mm)]
     funnel = KeepTogether([
         p("Onboarding funnel (people who started in this period)", "h2"),
+        *funnel_note,
         table(["Stage", "People", "% of sign-ups", "Dropped at this step"],
               [[escape(s["stage"]), num(s["count"]), pct(s["share"]), num(s["lost"])] for s in cur["funnel"]],
               [WIDTH * 0.40, WIDTH * 0.20, WIDTH * 0.20, WIDTH * 0.20], numeric=(1, 2, 3)),
@@ -485,12 +501,17 @@ DEFINITIONS = [
     ("Reversed", "sent, then returned to the customer."),
     ("Success rate", "successful divided by transactions with a final outcome (pending ones are left out)."),
     ("Money sent by customers", "the value of successful transactions, both to other banks and within Dash."),
-    ("Money in", "transfers received from other banks into Dash accounts, as notified by the payment partner. "
-                 "Internal settlement movements are excluded."),
+    ("Money in", "transfers received from other banks into app customers' accounts, as notified by the payment "
+                 "partner. Internal settlement movements are excluded."),
+    ("Received into other Dash accounts", "transfers from other banks into Dash accounts that are not app "
+                                          "customers, such as treasury or fixed-deposit accounts. Shown "
+                                          "separately and not counted as money in."),
     ("Sign-ups started", "people who began creating an account in the app, counted on the day they started."),
     ("Accounts opened", "accounts actually created, counted on the day of opening."),
     ("Finished", "of the people who started in the period, the share who have an account now."),
     ("Customers who signed in", "different people with an account who signed in to the app during the period. "
                                 "People who created a login but never finished opening an account are left out."),
     ("Previous period", "the same number of days immediately before the reporting period."),
+    ("Not comparable", "shown instead of a change when a figure was not yet being recorded for the whole "
+                       "previous period."),
 ]

@@ -7,6 +7,7 @@ from django.db import DatabaseError
 from . import banks as bank_names
 from .queries import (
     ACCOUNT_IDS_SQL,
+    ACCOUNTS,
     FUNNEL_STAGES,
     LOGIN_ID_SQL,
     LEGACY,
@@ -177,19 +178,26 @@ def destination_banks(p):
 
 def money_in(p):
     rows = fetch(f"""
-        SELECT DATE(at) AS d, COUNT(*) AS n, COALESCE(SUM(amount), 0) AS value
+        SELECT DATE(c.at) AS d,
+               SUM(a.account_number IS NOT NULL) AS n,
+               COALESCE(SUM(CASE WHEN a.account_number IS NOT NULL THEN c.amount END), 0) AS value,
+               SUM(a.account_number IS NULL) AS other_n,
+               COALESCE(SUM(CASE WHEN a.account_number IS NULL THEN c.amount END), 0) AS other_value
         FROM (
-            SELECT MIN(created_at) + INTERVAL 1 HOUR AS at,
+            SELECT MIN(created_at) + INTERVAL 1 HOUR AS at, MAX(account_number) AS account_number,
                    MAX(CAST(JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.amount')) AS DECIMAL(18,2))) AS amount
             FROM {WEBHOOKS}
             WHERE created_at >= %(since)s AND created_at < %(until)s
               AND JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.drCr')) = 'CR'
               AND JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.service')) = 'INWARD'
             GROUP BY provider_ref
-        ) credits
+        ) c
+        LEFT JOIN (SELECT DISTINCT account_number FROM {ACCOUNTS}) a ON a.account_number = c.account_number
         GROUP BY d
     """, p.params_utc)
-    return {r["d"]: {"count": int(r["n"]), "value": float(r["value"])} for r in rows}
+    return {r["d"]: {"count": int(r["n"] or 0), "value": float(r["value"]),
+                     "other_count": int(r["other_n"] or 0), "other_value": float(r["other_value"])}
+            for r in rows}
 
 
 def onboarding(p):
@@ -292,6 +300,8 @@ def collect(p):
             "value": round(t.get("value", 0.0), 2),
             "money_in": None if inflow is None else inflow.get(d, {}).get("value", 0.0),
             "money_in_count": None if inflow is None else inflow.get(d, {}).get("count", 0),
+            "money_in_other": None if inflow is None else inflow.get(d, {}).get("other_value", 0.0),
+            "money_in_other_count": None if inflow is None else inflow.get(d, {}).get("other_count", 0),
             "signups": started.get(d, {}).get("signups", 0),
             "finished": started.get(d, {}).get("finished", 0),
             "accounts": opened.get(d, 0),
@@ -315,6 +325,8 @@ def collect(p):
         "average_value": ratio(total("value"), total("success")),
         "money_in": None if inflow is None else total("money_in"),
         "money_in_count": None if inflow is None else total("money_in_count"),
+        "money_in_other": None if inflow is None else total("money_in_other"),
+        "money_in_other_count": None if inflow is None else total("money_in_other_count"),
         "signups": signups,
         "accounts": total("accounts"),
         "finish_rate": ratio(total("finished"), signups),
@@ -406,6 +418,7 @@ COMPARE = [
     ("Money sent by customers", "value", "money", False, True),
     ("Average successful transaction", "average_value", "money", False, True),
     ("Money in from other banks", "money_in", "money", False, True),
+    ("Received into other Dash accounts", "money_in_other", "money", False, None),
     ("Sign-ups started", "signups", "count", False, True),
     ("Accounts opened", "accounts", "count", False, True),
     ("Sign-ups that finished", "finish_rate", "pct", True, True),
@@ -414,12 +427,24 @@ COMPARE = [
 ]
 
 
-def comparison(cur, prev):
+PARTIAL_KEYS = {"accounts": ("accounts",), "money_in": ("money_in", "money_in_other")}
+
+
+def partial_keys(since, prev):
+    return {k for source, keys in PARTIAL_KEYS.items()
+            if since.get(source) and since[source] > prev["period"].start for k in keys}
+
+
+def comparison(cur, prev, partial=()):
     rows = []
     for label, key, kind, points, up_is_good in COMPARE:
         now, before = cur["totals"].get(key), prev["totals"].get(key)
+        if key == "money_in_other" and not now and not before:
+            continue
+        comparable = key not in partial
         rows.append({"metric": label, "key": key, "kind": kind, "now": now, "before": before,
-                     "change": change(now, before, points), "points": points, "up_is_good": up_is_good})
+                     "change": change(now, before, points) if comparable else None, "points": points,
+                     "up_is_good": up_is_good, "comparable": comparable})
     return rows
 
 
@@ -431,11 +456,15 @@ def pct(v, digits=1):
     return f"{v * 100:.{digits}f}%" if v is not None else "n/a"
 
 
-def findings(cur, prev):
+def findings(cur, prev, partial=()):
     t, b = cur["totals"], prev["totals"]
     out = []
 
-    def moved(label, now, before, fmt):
+    def moved(label, now, before, fmt, key=None):
+        if key in partial:
+            out.append(f"{label}: {fmt(now)}. There is no fair comparison with the previous period because "
+                       f"it was not fully recorded then.")
+            return
         c = change(now, before)
         if c is None:
             return
@@ -449,9 +478,11 @@ def findings(cur, prev):
     moved("Money sent by customers", t["value"], b["value"], money)
     if t["success_rate"] is not None and b["success_rate"] is not None:
         diff = (t["success_rate"] - b["success_rate"]) * 100
-        word = "improved" if diff > 0 else "worsened"
-        out.append(f"Success rate {word if abs(diff) >= 0.5 else 'held'} at {pct(t['success_rate'])}"
-                   + (f" ({abs(diff):.1f} points {'up' if diff > 0 else 'down'})." if abs(diff) >= 0.5 else "."))
+        if abs(diff) < 0.5:
+            out.append(f"Success rate held at {pct(t['success_rate'])}.")
+        else:
+            out.append(f"Success rate {'rose' if diff > 0 else 'fell'} to {pct(t['success_rate'])} "
+                       f"({abs(diff):.1f} points {'up' if diff > 0 else 'down'} from {pct(b['success_rate'])}).")
     if cur["reasons"]:
         top = cur["reasons"][0]
         out.append(f"The main failure reason was \"{top['reason']}\" ({pct(top['share'], 0)} of failures, "
@@ -460,11 +491,14 @@ def findings(cur, prev):
         if t["failed"]:
             out.append(f"{pct(system / t['failed'], 0)} of failures were on the bank or partner side; "
                        f"the rest were customer-side, account restrictions or unrecorded.")
-    moved("Accounts opened", t["accounts"], b["accounts"], lambda v: f"{v:,}")
+    moved("Accounts opened", t["accounts"], b["accounts"], lambda v: f"{v:,}", "accounts")
     if t["money_in"] is not None:
-        net = t["money_in"] - t["value"]
-        out.append(f"Money in from other banks was {money(t['money_in'])}; "
-                   f"{'more' if net >= 0 else 'less'} than money sent by {money(abs(net))}.")
+        line = (f"Customers received {money(t['money_in'])} from other banks in {t['money_in_count']:,} "
+                f"transfers.")
+        if t["money_in_other"]:
+            line += (f" A further {money(t['money_in_other'])} arrived into Dash accounts that are not app "
+                     f"customers and is shown separately.")
+        out.append(line)
     return out
 
 
@@ -505,20 +539,33 @@ def notable_events(cur):
     return out
 
 
-def availability(cur, prev):
+def recorded_from():
+    out = {}
+    first_open = safe(lambda: fetch(f"SELECT MIN(ACCOUNT_OPENED_DATE) AS d FROM {ONBOARDING}", {})[0]["d"])
+    if first_open:
+        out["accounts"] = first_open.date()
+    first_in = safe(lambda: fetch(f"SELECT MIN(created_at) AS d FROM {WEBHOOKS}", {})[0]["d"])
+    if first_in:
+        out["money_in"] = (first_in + WAT).date()
+    return out
+
+
+def availability(cur, prev, since):
     notes = []
     earliest = prev["period"].start
-    first_open = safe(lambda: fetch(f"SELECT MIN(ACCOUNT_OPENED_DATE) AS d FROM {ONBOARDING}", {})[0]["d"])
-    if first_open and first_open.date() > earliest:
-        notes.append(f"Account opening dates are only recorded from {first_open:%d %B %Y}, so accounts opened "
-                     f"before then are missing from the daily counts and from the comparison.")
+    if since.get("accounts") and since["accounts"] > earliest:
+        notes.append(f"Account opening dates are only recorded from {since['accounts']:%d %B %Y}, so the "
+                     f"previous period's accounts opened is incomplete and the change is shown as not comparable.")
     if cur["totals"]["money_in"] is None:
         notes.append("Money in could not be read for this report.")
-    else:
-        first_in = safe(lambda: fetch(f"SELECT MIN(created_at) AS d FROM {WEBHOOKS}", {})[0]["d"])
-        if first_in and (first_in + WAT).date() > earliest:
-            notes.append(f"Money in from other banks is only recorded from {(first_in + WAT):%d %B %Y}, "
-                         f"so it is understated before then.")
+    elif since.get("money_in") and since["money_in"] > earliest:
+        notes.append(f"Money in from other banks is only recorded from {since['money_in']:%d %B %Y}, so the "
+                     f"previous period's figure is incomplete and the change is shown as not comparable.")
+    if cur["totals"].get("money_in_other"):
+        notes.append(f"Money in counts only transfers into app customers' accounts. A further "
+                     f"{money(cur['totals']['money_in_other'])} ({cur['totals']['money_in_other_count']:,} "
+                     f"transfers) arrived into Dash accounts that are not app customers, such as treasury or "
+                     f"fixed-deposit accounts, and is shown separately.")
     before, now = prev["totals"]["transactions"], cur["totals"]["transactions"]
     if now and before < now * SMALL_BASE:
         notes.append(f"The previous period had far less activity ({before:,} transactions against {now:,}), "
@@ -538,15 +585,17 @@ def availability(cur, prev):
 def build(period, generated_by=""):
     cur = collect(period)
     prev = collect(period.previous())
+    since = recorded_from()
+    partial = partial_keys(since, prev)
     return {
         "period": period,
         "previous": period.previous(),
         "current": cur,
         "prior": prev,
-        "comparison": comparison(cur, prev),
-        "findings": findings(cur, prev),
+        "comparison": comparison(cur, prev, partial),
+        "findings": findings(cur, prev, partial),
         "events": notable_events(cur),
-        "notes": availability(cur, prev),
+        "notes": availability(cur, prev, since),
         "weekly": weekly(cur["series"]),
         "generated_at": lagos_now(),
         "generated_by": generated_by,

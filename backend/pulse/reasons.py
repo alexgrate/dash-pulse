@@ -15,8 +15,8 @@ RULES = [
     (r"timed? ?out|timeout", "Receiving bank took too long to reply", "system"),
     (r"http error|connection|service unavailable", "Could not reach our payment partner", "system"),
     (r"request in progress|in progress|pending", "Waiting for payment partner to confirm", "system"),
-    (r"invalid amount|invalid json|must not be blank|format error|validation", "Our app sent a faulty request", "system"),
-    (r"do not honou?r|not permitted", "Receiving bank refused it", "system"),
+    (r"invalid amount|invalid json|must not be blank|format error|validation|incorrect transaction message", "Our app sent a faulty request", "system"),
+    (r"do not honou?r|not permitted|rejected by destination|not profiled", "Receiving bank refused it", "system"),
     (r"unexpected error", "Our system had an error", "system"),
 ]
 

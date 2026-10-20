@@ -108,7 +108,7 @@ password, salt, BVN, NIN, *_IMAGE_PATH, names, phone, email, balances (without a
 
 ## Money in
 
-Money in comes from `dashmfb-cba-mcs`.webhook_events, the notices NCUBE sends when an account is credited. Each row's `raw_payload` carries `drCr`, `amount` (naira) and `service`. Only `drCr = CR` with `service = INWARD` counts as money in: transfers from other banks. `INTERNAL` credits are left out because they include Dash's own settlement and treasury moves (single credits of hundreds of millions), not customer deposits. Repeated notices for one transfer share a `provider_ref` and are counted once. `created_at` is UTC.
+Money in comes from `dashmfb-cba-mcs`.webhook_events, the notices NCUBE sends when an account is credited. Each row's `raw_payload` carries `drCr`, `amount` (naira) and `service`. Only `drCr = CR` with `service = INWARD` counts as money in: transfers from other banks. `INTERNAL` credits are left out because they include Dash's own settlement and treasury moves (single credits of hundreds of millions), not customer deposits. Repeated notices for one transfer share a `provider_ref` and are counted once. `created_at` is UTC. Money in also counts only credits whose `account_number` is in `dashmfb-cba-mcs`.accounts (app customers). INWARD credits to other Dash accounts (treasury, fixed-deposit and similar, about ₦652m of ₦3.0bn in Q3 2026) are left out of the Live figure and the drill-down list, and shown on their own line in reports. Money in and money sent are never netted: the dashboard only sees money leaving through the app, not internet banking or the branch.
 
 ## People lists (Explore)
 

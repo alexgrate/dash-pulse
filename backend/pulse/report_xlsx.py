@@ -112,6 +112,11 @@ def build_xlsx(report):
         ws.cell(row=i, column=2).number_format = fmt
         ws.cell(row=i, column=3).number_format = fmt
         cell = ws.cell(row=i, column=4)
+        if not r.get("comparable", True):
+            cell.value = "not comparable"
+            cell.font = Font(italic=True, color=MUTED)
+            cell.alignment = Alignment(horizontal="right")
+            continue
         cell.number_format = '+0.0" pts";-0.0" pts"' if r["points"] else "+0.0%;-0.0%"
         if r["points"] and r["change"] is not None:
             cell.value = r["change"] * 100
@@ -139,23 +144,25 @@ def build_xlsx(report):
 
     ws = sheet(wb, "Daily", "One row per day (Lagos time). Totals at the bottom.")
     headers = ["Date", "Transactions", "Successful", "Failed", "Reversed", "Pending", "Success rate",
-               "Money sent (₦)", "Money in (₦)", "Transfers received", "Sign-ups", "Accounts opened"]
-    formats = [DATE, COUNT, COUNT, COUNT, COUNT, COUNT, PCT, NAIRA, NAIRA, COUNT, COUNT, COUNT]
+               "Money sent (₦)", "Money in (₦)", "Transfers received", "Sign-ups", "Accounts opened",
+               "Received into other Dash accounts (₦)"]
+    formats = [DATE, COUNT, COUNT, COUNT, COUNT, COUNT, PCT, NAIRA, NAIRA, COUNT, COUNT, COUNT, NAIRA]
     rows = [[s["date"], s["transactions"], s["success"], s["failed"], s["reversed"], s["pending"],
-             s["success_rate"], s["value"], s["money_in"], s["money_in_count"], s["signups"], s["accounts"]]
+             s["success_rate"], s["value"], s["money_in"], s["money_in_count"], s["signups"], s["accounts"],
+             s.get("money_in_other")]
             for s in cur["series"]]
-    end = write_table(ws, 4, headers, rows, formats, [16, 13, 12, 10, 10, 10, 12, 18, 18, 12, 11, 12])
+    end = write_table(ws, 4, headers, rows, formats, [16, 13, 12, 10, 10, 10, 12, 18, 18, 12, 11, 12, 20])
     t = cur["totals"]
     total_row(ws, end + 1, ["Total", t["transactions"], t["success"], t["failed"], t["reversed"], t["pending"],
                             t["success_rate"], t["value"], t["money_in"], t["money_in_count"], t["signups"],
-                            t["accounts"]], formats)
+                            t["accounts"], t.get("money_in_other")], formats)
     cats = Reference(ws, min_col=1, min_row=5, max_row=end)
-    chart(ws, f"N4", "Transactions per day", cats,
+    chart(ws, f"O4", "Transactions per day", cats,
           [Reference(ws, min_col=3, min_row=4, max_row=end), Reference(ws, min_col=4, min_row=4, max_row=end)],
           stacked=True)
-    chart(ws, f"N22", "Money sent and money in per day (₦)", cats,
+    chart(ws, f"O22", "Money sent and money in per day (₦)", cats,
           [Reference(ws, min_col=8, min_row=4, max_row=end), Reference(ws, min_col=9, min_row=4, max_row=end)])
-    chart(ws, f"N40", "Sign-ups and accounts opened per day", cats,
+    chart(ws, f"O40", "Sign-ups and accounts opened per day", cats,
           [Reference(ws, min_col=11, min_row=4, max_row=end), Reference(ws, min_col=12, min_row=4, max_row=end)])
 
     ws = sheet(wb, "Weekly", "Weeks run Monday to Sunday; the first and last weeks may be partial.")
