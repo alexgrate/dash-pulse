@@ -23,6 +23,14 @@
   .report-actions .primary { background: var(--button-bg); color: var(--button-fg); }
   .report-actions .secondary { background: var(--darkened-bg); color: var(--body-fg); border: 1px solid var(--hairline-color); }
   .report-busy { display: none; margin-top: 12px; color: var(--body-quiet-color); }
+  .report-card + .report-card { margin-top: 24px; }
+  .report-picks { display: none; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; padding: 0; list-style: none; }
+  .report-picks.on { display: flex; }
+  .report-picks li { margin: 0; list-style: none; }
+  .report-picks li::marker { content: ""; }
+  .report-picks label { display: inline-flex; gap: 6px; align-items: center; padding: 6px 10px; border: 1px solid var(--hairline-color); border-radius: 6px; cursor: pointer; }
+  .report-current { margin: 0 0 14px; }
+  .report-current.off { display: none; }
   .report-history { max-width: 760px; margin-top: 28px; }
   .report-history table { width: 100%; }
   .status-failed { color: var(--error-fg); font-weight: 600; }
@@ -65,6 +73,47 @@
   </form>
 </div>
 
+<div class="report-card">
+  <h2>Compare months or quarters</h2>
+  <p class="help">Puts whole months or quarters side by side: every headline figure with its change from the one before,
+    daily averages for a fair comparison, trend charts, failure reasons, products and receiving banks, all in one PDF.</p>
+
+  <form method="post" id="compare-form">
+    {% csrf_token %}
+    {% if compare_form.non_field_errors %}<ul class="errorlist">{% for e in compare_form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+
+    <strong>Compare</strong>
+    <ul class="report-periods">
+      {% for radio in compare_form.unit %}<li>{{ radio }}</li>{% endfor %}
+    </ul>
+    <strong>Which ones</strong>
+    <ul class="report-periods">
+      {% for radio in compare_form.span %}<li>{{ radio }}</li>{% endfor %}
+    </ul>
+    <div class="report-current" id="compare-current">{{ compare_form.current }} <label for="{{ compare_form.current.id_for_label }}" style="display:inline">{{ compare_form.current.label }}</label></div>
+    <ul class="report-picks" id="pick-month">
+      {% for box in compare_form.months %}<li>{{ box }}</li>{% endfor %}
+    </ul>
+    <ul class="report-picks" id="pick-quarter">
+      {% for box in compare_form.quarters %}<li>{{ box }}</li>{% endfor %}
+    </ul>
+    <p class="help">Finished months and quarters only, unless you include the current one. Choose between 2 and 6.</p>
+
+    <div class="report-actions">
+      <button type="submit" name="action" value="compare_pdf" class="primary">Download PDF</button>
+    </div>
+
+    <div class="report-email">
+      <label for="{{ compare_form.email.id_for_label }}">Email the PDF to</label>
+      {{ compare_form.email }}
+      <button type="submit" name="action" value="compare_email" class="secondary" style="margin-left:8px;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600">Send</button>
+      {% if compare_form.email.errors %}<ul class="errorlist">{% for e in compare_form.email.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      <p class="help" style="margin-top:6px">Only {{ domains }} addresses can receive reports.</p>
+    </div>
+    <p class="report-busy" id="compare-busy">Preparing the comparison… this can take up to a minute for six months.</p>
+  </form>
+</div>
+
 <div class="report-history">
   <h2>Recent reports</h2>
   <table>
@@ -75,7 +124,7 @@
         <td>{{ r.at|date:"d M Y, H:i" }}</td>
         <td>{{ r.user.get_username }}</td>
         <td>{{ r.start|date:"d M Y" }} – {{ r.end|date:"d M Y" }}</td>
-        <td>{% if r.action == "pdf" %}PDF download{% elif r.action == "xlsx" %}Excel download{% else %}Email{% endif %}</td>
+        <td>{% if r.action == "pdf" %}PDF download{% elif r.action == "xlsx" %}Excel download{% elif r.action == "compare_pdf" %}Comparison PDF{% elif r.action == "compare_email" %}Comparison email{% else %}Email{% endif %}</td>
         <td>{{ r.sent_to|default:"—" }}</td>
         <td class="status-{{ r.status }}" title="{{ r.error }}">{{ r.status }}</td>
       </tr>
@@ -98,6 +147,24 @@
         const busy = document.getElementById('report-busy')
         busy.style.display = 'block'
         setTimeout(() => (busy.style.display = 'none'), 15000)
+      }
+    })
+
+    const cmp = document.getElementById('compare-form')
+    const syncCompare = () => {
+      const unit = cmp.querySelector('input[name=cmp-unit]:checked')?.value || 'month'
+      const pick = cmp.querySelector('input[name=cmp-span]:checked')?.value === 'pick'
+      document.getElementById('pick-month').classList.toggle('on', pick && unit === 'month')
+      document.getElementById('pick-quarter').classList.toggle('on', pick && unit === 'quarter')
+      document.getElementById('compare-current').classList.toggle('off', pick)
+    }
+    cmp.querySelectorAll('input[name=cmp-unit], input[name=cmp-span]').forEach((r) => r.addEventListener('change', syncCompare))
+    syncCompare()
+    cmp.addEventListener('submit', (e) => {
+      if (e.submitter && e.submitter.value === 'compare_pdf') {
+        const busy = document.getElementById('compare-busy')
+        busy.style.display = 'block'
+        setTimeout(() => (busy.style.display = 'none'), 30000)
       }
     })
   })()

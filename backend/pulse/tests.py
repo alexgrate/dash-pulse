@@ -670,11 +670,15 @@ class ReportTests(TestCase):
             key = (period.start.isoformat(), period.end.isoformat())
             return fake.setdefault(key, fake_report_period(*key)[1])
 
+        dt = __import__("datetime")
         for target, value in (("pulse.report_data.collect", collect),
+                              ("pulse.report_compare.collect", collect),
                               ("pulse.report_data.availability", lambda cur, prev, since: ["A data note."]),
-                              ("pulse.report_data.recorded_from",
-                               lambda: {"accounts": __import__("datetime").date(2026, 9, 25)}),
-                              ("pulse.report_data.lagos_now", lambda: __import__("datetime").datetime(2026, 10, 20, 9))):
+                              ("pulse.report_data.recorded_from", lambda: {"accounts": dt.date(2026, 9, 25)}),
+                              ("pulse.report_compare.recorded_from", lambda: {"accounts": dt.date(2026, 6, 17)}),
+                              ("pulse.report_compare.first_day", lambda: dt.date(2026, 4, 3)),
+                              ("pulse.report_compare.lagos_now", lambda: dt.datetime(2026, 10, 20, 9)),
+                              ("pulse.report_data.lagos_now", lambda: dt.datetime(2026, 10, 20, 9))):
             patcher = patch(target, side_effect=value) if callable(value) else patch(target, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -761,6 +765,63 @@ class ReportTests(TestCase):
         self.assertEqual((rows["accounts"]["comparable"], rows["accounts"]["change"]), (False, None))
         self.assertTrue(rows["money_in"]["comparable"])
         self.assertEqual(rows["money_in_other"]["now"], 600_000.0)
+
+
+    def compare(self, **data):
+        return self.client.post("/manage/reports/", {"cmp-unit": "month", "cmp-span": "3", **data})
+
+    def test_comparison_pdf_download_and_email(self):
+        from .models import ReportLog
+
+        self.client.force_login(self.admin)
+        page = self.client.get("/manage/reports/")
+        self.assertContains(page, "Compare months or quarters")
+        self.assertContains(page, "Oct 2026 (so far)")
+        self.assertContains(page, "Q2 2026")
+        r = self.compare(action="compare_pdf")
+        self.assertEqual(r["Content-Type"], "application/pdf")
+        self.assertIn("Dash-Comparison_months_2026-07_to_2026-09.pdf", r["Content-Disposition"])
+        r = self.compare(action="compare_pdf", **{"cmp-span": "pick", "cmp-months": ["2026-09"]})
+        self.assertContains(r, "Choose at least two months")
+        sent = []
+        with patch("pulse.report_views.start", side_effect=lambda fn, *a: fn(*a)), \
+             patch("pulse.report_views.mailer.send", side_effect=lambda to, s, h, att: sent.append((to, s, att))):
+            r = self.compare(action="compare_email", **{"cmp-email": "someone@gmail.com"})
+            self.assertContains(r, "can only be sent to @dash-mfb.com")
+            self.compare(action="compare_email", **{"cmp-unit": "quarter", "cmp-span": "pick",
+                                                     "cmp-quarters": ["2026-Q2", "2026-Q3"],
+                                                     "cmp-email": "md@dash-mfb.com"})
+        to, subject, attachments = sent[0]
+        self.assertEqual(to, ["md@dash-mfb.com"])
+        self.assertIn("Q2 2026 to Q3 2026", subject)
+        self.assertEqual([a[0] for a in attachments], ["Dash-Comparison_quarters_2026-Q2_to_2026-Q3.pdf"])
+        self.assertTrue(attachments[0][2].startswith(b"%PDF"))
+        self.assertEqual(list(ReportLog.objects.values_list("action", "status")),
+                         [("compare_email", "sent"), ("compare_pdf", "done")])
+
+    def test_comparison_marks_gaps_and_unfinished_periods(self):
+        from datetime import date
+
+        from . import report_compare as rc
+
+        slots = rc.choose("month", "3", include_current=True, today=date(2026, 10, 20), first=date(2026, 4, 3))
+        self.assertEqual([s.name() for s in slots], ["Aug 2026", "Sep 2026", "Oct 2026 (so far)"])
+        self.assertEqual((slots[-1].end, slots[-1].days), (date(2026, 10, 19), 19))
+        report = rc.build("month", slots, "boss")
+        rows = {r["key"]: r for r in report["rows"]}
+        self.assertEqual(rows["transactions"]["cells"][-1]["why"], "so far")
+        self.assertIsNotNone(rows["success_rate"]["cells"][-1]["change"])
+        cards = {c["key"]: c for c in report["comparison"]}
+        self.assertEqual(cards["transactions"]["suffix"], " a day vs previous")
+        self.assertTrue(any("not finished" in n for n in report["notes"]))
+        quarters = rc.choose("quarter", "6", today=date(2026, 10, 20), first=date(2026, 4, 3))
+        self.assertEqual([s.name() for s in quarters], ["Q2 2026", "Q3 2026"])
+        report = rc.build("quarter", quarters, "boss")
+        rows = {r["key"]: r for r in report["rows"]}
+        self.assertTrue(rows["transactions"]["cells"][0]["incomplete"])
+        self.assertEqual(rows["transactions"]["cells"][1]["why"], "incomplete")
+        self.assertTrue(any("Records begin on 03 April 2026" in n for n in report["notes"]))
+        self.assertTrue(rc.build_pdf(report).startswith(b"%PDF"))
 
 
 class ReportRuleTests(SimpleTestCase):

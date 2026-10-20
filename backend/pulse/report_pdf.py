@@ -134,7 +134,7 @@ def labels_for(dates):
     return [f"{d:%d %b}" if (last - i) % every == 0 else "" for i, d in enumerate(dates)]
 
 
-def bar_chart(title, buckets, series, unit="", stacked=False, height=62 * mm):
+def bar_chart(title, buckets, series, unit="", stacked=False, height=62 * mm, labels=None):
     d = Drawing(WIDTH, height)
     d.add(String(0, height - 10, title, fontName="Helvetica-Bold", fontSize=9, fillColor=INK))
     chart = VerticalBarChart()
@@ -144,7 +144,7 @@ def bar_chart(title, buckets, series, unit="", stacked=False, height=62 * mm):
     for i, (_, _, color) in enumerate(series):
         chart.bars[i].fillColor = color
         chart.bars[i].strokeColor = None
-    chart.categoryAxis.categoryNames = labels_for([b["date"] for b in buckets])
+    chart.categoryAxis.categoryNames = labels if labels is not None else labels_for([b["date"] for b in buckets])
     chart.categoryAxis.labels.fontName = "Helvetica"
     chart.categoryAxis.labels.fontSize = 6.5
     chart.categoryAxis.labels.angle = 0
@@ -208,7 +208,7 @@ class NumberedCanvas(canvas.Canvas):
             x += 9 * mm
         self.setFont("Helvetica-Bold", 8.5)
         self.setFillColor(BRAND)
-        self.drawString(x, PAGE_H - 10.4 * mm, "Dash MFB · Operations Report")
+        self.drawString(x, PAGE_H - 10.4 * mm, r.get("header", "Dash MFB · Operations Report"))
         self.setFont("Helvetica", 8)
         self.setFillColor(MUTED)
         self.drawRightString(PAGE_W - MARGIN, PAGE_H - 10.4 * mm, r["period"].label())
@@ -235,7 +235,7 @@ def kpi_cards(report):
             p(escape(r["metric"].upper()), "kpi_label"),
             p(escape(value), "kpi"),
             p(f'<font color="{hexcolor(color)}">{text}</font>'
-              f'{" vs previous" if r.get("comparable", True) else ""}', "cell_muted"),
+              f'{r.get("suffix", " vs previous") if r.get("comparable", True) else ""}', "cell_muted"),
         ])
     grid = []
     for i in range(0, len(cells), 4):

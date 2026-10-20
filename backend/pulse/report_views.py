@@ -10,7 +10,7 @@ from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 
-from . import mailer, report_data
+from . import mailer, report_compare, report_data
 from .models import ReportLog
 from .report_pdf import build_pdf, fmt
 from .report_xlsx import build_xlsx
@@ -20,6 +20,15 @@ logger = logging.getLogger("pulse.reports")
 PERIODS = [("7", "Last 7 days"), ("30", "Last 30 days"), ("90", "Last 3 months"), ("custom", "Choose dates")]
 PDF = "application/pdf"
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def check_email(form, data):
+    email = (data.get("email") or "").strip().lower()
+    if not email:
+        form.add_error("email", "Enter the email address to send the report to.")
+    elif email.rsplit("@", 1)[-1] not in settings.PULSE_REPORT_EMAIL_DOMAINS:
+        allowed = ", ".join(f"@{d}" for d in settings.PULSE_REPORT_EMAIL_DOMAINS)
+        form.add_error("email", f"Reports can only be sent to {allowed} addresses.")
 
 
 class ReportForm(forms.Form):
@@ -38,12 +47,38 @@ class ReportForm(forms.Form):
             raise forms.ValidationError(str(e) if isinstance(e, ValueError) and "days" in str(e)
                                         else "Choose a valid date range.")
         if self.data.get("action") == "email":
-            email = (data.get("email") or "").strip().lower()
-            if not email:
-                self.add_error("email", "Enter the email address to send the report to.")
-            elif email.rsplit("@", 1)[-1] not in settings.PULSE_REPORT_EMAIL_DOMAINS:
-                allowed = ", ".join(f"@{d}" for d in settings.PULSE_REPORT_EMAIL_DOMAINS)
-                self.add_error("email", f"Reports can only be sent to {allowed} addresses.")
+            check_email(self, data)
+        return data
+
+
+class CompareForm(forms.Form):
+    unit = forms.ChoiceField(choices=[("month", "Months"), ("quarter", "Quarters")], initial="month",
+                             widget=forms.RadioSelect)
+    span = forms.ChoiceField(choices=[("3", "Last 3"), ("6", "Last 6"), ("pick", "Choose which")], initial="3",
+                             widget=forms.RadioSelect)
+    current = forms.BooleanField(required=False, label="Include the current one so far")
+    months = forms.MultipleChoiceField(required=False, widget=forms.CheckboxSelectMultiple)
+    quarters = forms.MultipleChoiceField(required=False, widget=forms.CheckboxSelectMultiple)
+    email = forms.EmailField(required=False, label="Send to")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        first = report_compare.first_day()
+        for field, unit in (("months", "month"), ("quarters", "quarter")):
+            self.fields[field].choices = [(s.key, s.name()) for s in report_compare.available(unit, first=first)]
+        self.first = first
+
+    def clean(self):
+        data = super().clean()
+        unit = data.get("unit") or "month"
+        keys = data.get("months" if unit == "month" else "quarters") or []
+        try:
+            data["slots"] = report_compare.choose(unit, data.get("span") or "3", keys, data.get("current"),
+                                                  first=self.first)
+        except ValueError as e:
+            raise forms.ValidationError(str(e))
+        if self.data.get("action") == "compare_email":
+            check_email(self, data)
         return data
 
 
@@ -96,13 +131,64 @@ def send_report(log_id, window, username, email):
         close_old_connections()
 
 
+def send_comparison(log_id, unit, slots, username, email):
+    log = ReportLog.objects.get(pk=log_id)
+    try:
+        report = report_compare.build(unit, slots, username)
+        word = report_compare.UNITS[unit][0]
+        mailer.send(
+            [email],
+            f"Dash MFB {word.title()} Comparison · {slots[0].name()} to {slots[-1].name()}",
+            report_compare.email_html(report),
+            [(report_compare.filename(report), PDF, report_compare.build_pdf(report))],
+        )
+        log.status = "sent"
+    except Exception as e:
+        logger.exception("Comparison email failed")
+        log.status, log.error = "failed", str(e)[:500]
+    finally:
+        log.save()
+        close_old_connections()
+
+
+def compare(request):
+    form = CompareForm(request.POST, prefix="cmp")
+    if not form.is_valid():
+        return form
+    action = request.POST.get("action")
+    unit, slots = form.cleaned_data["unit"], form.cleaned_data["slots"]
+    user = request.user
+    span = {"start": slots[0].start, "end": slots[-1].end}
+    if action == "compare_pdf":
+        report = report_compare.build(unit, slots, user.get_username())
+        content = report_compare.build_pdf(report)
+        ReportLog.objects.create(user=user, action="compare_pdf", **span)
+        response = HttpResponse(content, content_type=PDF)
+        response["Content-Disposition"] = f'attachment; filename="{report_compare.filename(report)}"'
+        return response
+    email = form.cleaned_data["email"].strip().lower()
+    log = ReportLog.objects.create(user=user, action="compare_email", sent_to=email, status="sending", **span)
+    start(send_comparison, log.pk, unit, slots, user.get_username(), email)
+    messages.success(request, f"The comparison from {slots[0].name()} to {slots[-1].name()} is being prepared "
+                              f"and will arrive at {email} in a minute or two, with the PDF attached.")
+    return redirect(request.path)
+
+
 def start(fn, *args):
     threading.Thread(target=fn, args=args, daemon=True).start()
 
 
 def reports(request):
-    form = ReportForm(request.POST or None, initial={"email": request.user.email})
-    if request.method == "POST" and form.is_valid():
+    action = request.POST.get("action", "")
+    comparing = request.method == "POST" and action.startswith("compare_")
+    form = ReportForm(None if comparing else (request.POST or None), initial={"email": request.user.email})
+    compare_form = CompareForm(prefix="cmp", initial={"email": request.user.email})
+    if comparing:
+        result = compare(request)
+        if isinstance(result, HttpResponse):
+            return result
+        compare_form = result
+    elif request.method == "POST" and form.is_valid():
         action = request.POST.get("action")
         window = form.cleaned_data["window"]
         user = request.user
@@ -125,6 +211,7 @@ def reports(request):
         **admin.site.each_context(request),
         "title": "Reports",
         "form": form,
+        "compare_form": compare_form,
         "recent": ReportLog.objects.select_related("user")[:15],
         "domains": ", ".join(f"@{d}" for d in settings.PULSE_REPORT_EMAIL_DOMAINS),
     }
