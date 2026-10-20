@@ -705,6 +705,7 @@ class ReportTests(TestCase):
 
     def test_pdf_and_excel_downloads(self):
         from io import BytesIO
+        from zipfile import ZipFile
 
         from openpyxl import load_workbook
 
@@ -719,6 +720,11 @@ class ReportTests(TestCase):
         wb = load_workbook(BytesIO(r.content))
         self.assertIn("Failure reasons", wb.sheetnames)
         self.assertEqual(wb["Daily"].cell(row=5, column=2).value, 100)
+        with ZipFile(BytesIO(r.content)) as z:
+            for name in z.namelist():
+                if name.startswith("xl/worksheets/sheet"):
+                    xml = z.read(name).decode()
+                    self.assertEqual('pane="bottomLeft"' in xml, "<pane " in xml, name)
         self.assertEqual(list(ReportLog.objects.values_list("action", flat=True)), ["xlsx", "pdf"])
 
     def test_email_goes_only_to_company_addresses_with_both_files(self):

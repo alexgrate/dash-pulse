@@ -38,7 +38,7 @@ def sheet(wb, title, intro=None):
     return ws
 
 
-def write_table(ws, top, headers, rows, formats, widths=None):
+def write_table(ws, top, headers, rows, formats, widths=None, freeze=True):
     for c, h in enumerate(headers, start=1):
         cell = ws.cell(row=top, column=c, value=h)
         cell.font, cell.fill = HEAD, HEAD_FILL
@@ -60,7 +60,8 @@ def write_table(ws, top, headers, rows, formats, widths=None):
             ws.column_dimensions[get_column_letter(c)].width = w
     if rows:
         ws.auto_filter.ref = f"A{top}:{get_column_letter(len(headers))}{top + len(rows)}"
-    ws.freeze_panes = ws.cell(row=top + 1, column=1)
+    if freeze:
+        ws.freeze_panes = ws.cell(row=top + 1, column=1)
     return top + len(rows)
 
 
@@ -106,7 +107,7 @@ def build_xlsx(report):
     for r in report["comparison"]:
         rows.append([r["metric"], r["now"], r["before"], r["change"]])
     end = write_table(ws, 5, ["Measure", "This period", "Previous period", "Change"], rows,
-                      ["text", None, None, None], [40, 22, 22, 14])
+                      ["text", None, None, None], [40, 22, 22, 14], freeze=False)
     for i, r in enumerate(report["comparison"], start=6):
         fmt = FORMATS[r["kind"]]
         ws.cell(row=i, column=2).number_format = fmt
@@ -123,7 +124,6 @@ def build_xlsx(report):
         if r["change"] is not None and r["up_is_good"] is not None and abs(r["change"]) >= 0.005:
             good = (r["change"] > 0) == r["up_is_good"]
             cell.font = Font(color=GOOD if good else BAD, bold=True)
-    ws.freeze_panes = None
     row = end + 2
     ws.cell(row=row, column=1, value="Key findings").font = Font(bold=True, size=12, color=BRAND)
     for f in report["findings"]:
@@ -203,13 +203,11 @@ def build_xlsx(report):
     ws = sheet(wb, "Onboarding", "People who started signing up in the period, and where they stopped.")
     end = write_table(ws, 4, ["Stage", "People", "% of sign-ups", "Dropped at this step"],
                       [[s["stage"], s["count"], s["share"], s["lost"]] for s in cur["funnel"]],
-                      ["text", COUNT, PCT, COUNT], [34, 12, 14, 18])
-    ws.freeze_panes = None
+                      ["text", COUNT, PCT, COUNT], [34, 12, 14, 18], freeze=False)
     top = end + 3
     ws.cell(row=top - 1, column=1, value="Where people stopped").font = Font(bold=True, size=12, color=BRAND)
     write_table(ws, top, ["Last step reached", "People", "Share of sign-ups"],
-                [[s["step"], s["count"], s["share"]] for s in cur["stuck"]], ["text", COUNT, PCT])
-    ws.freeze_panes = None
+                [[s["step"], s["count"], s["share"]] for s in cur["stuck"]], ["text", COUNT, PCT], freeze=False)
 
     ws = sheet(wb, "Rewards", "Rewards credited to customers in the period.")
     end = write_table(ws, 4, ["Reward", "Payouts", "Total paid (₦)"],
