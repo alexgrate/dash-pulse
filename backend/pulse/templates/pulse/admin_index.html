@@ -1,0 +1,14 @@
+{% extends "admin/index.html" %}
+
+{% block content %}
+<div class="module" style="max-width:760px;margin-bottom:20px">
+  <table style="width:100%">
+    <caption>Reports</caption>
+    <tr>
+      <th scope="row"><a href="{% url 'pulse-reports' %}">Operations report (PDF and Excel)</a></th>
+      <td style="text-align:right"><a href="{% url 'pulse-reports' %}" class="viewlink">Open</a></td>
+    </tr>
+  </table>
+</div>
+{{ block.super }}
+{% endblock %}

@@ -16,3 +16,17 @@ class ExploreLog(models.Model):
 class FailureNotice(models.Model):
     tx_id = models.BigIntegerField(unique=True)
     sent_at = models.DateTimeField(auto_now_add=True)
+
+
+class ReportLog(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    at = models.DateTimeField(auto_now_add=True)
+    start = models.DateField()
+    end = models.DateField()
+    action = models.CharField(max_length=20)
+    sent_to = models.EmailField(blank=True)
+    status = models.CharField(max_length=20, default="done")
+    error = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        ordering = ["-at"]

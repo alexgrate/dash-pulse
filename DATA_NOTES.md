@@ -123,3 +123,7 @@ Uses the same FAILED rule as everywhere else. Looks back 2 hours each minute, sk
 ## Sign-ups tab (pulse/explore.py: build_signup_history)
 
 Day (last 30), week (last 12, Monday start) and month (last 12) totals, cached 5 minutes in the snapshot. Sign-ups count by `DATE_CREATED`; accounts opened by `ACCOUNT_OPENED_DATE`, so both match the other tabs. "Finished" is the share of that period's sign-ups that have an account now. In Explore mode, clicking a bar lists the people for that period.
+
+## Reports (pulse/report_data.py, report_pdf.py, report_xlsx.py; /manage/reports/)
+
+Admins can download or email an operations report for the last 7, 30 or 90 days (ending yesterday) or a custom range of up to 370 days. Every figure uses the same rules as the dashboard and is compared with the same number of days immediately before. The PDF uses NGN because the built-in PDF fonts have no ₦ sign; the Excel file uses ₦. Emails only go to domains in PULSE_REPORT_EMAIL_DOMAINS (default dash-mfb.com) and are built in a background thread. Every download and email is recorded in ReportLog. Reports contain totals only, no customer names or account numbers.

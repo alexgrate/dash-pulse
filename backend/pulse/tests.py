@@ -618,3 +618,130 @@ class SignupHistoryTests(SimpleTestCase):
         self.assertEqual(parse_range_end(start, "2026-09-01"), start)
         self.assertEqual(parse_range_end(start, "2026-10-07"), date(2026, 10, 7))
         self.assertEqual(parse_range_end(start, "2030-01-01"), date(2027, 11, 5))
+
+
+def fake_report_period(start, end):
+    from datetime import date, timedelta
+
+    from .report_data import Period
+
+    p = Period(date.fromisoformat(start), date.fromisoformat(end))
+    series = []
+    for i, d in enumerate(p.dates()):
+        series.append({"date": d, "transactions": 100 + i, "success": 80, "failed": 15 + i % 3, "reversed": 2,
+                       "pending": 3 + i, "settled": 97, "success_rate": 0.82, "value": 1_500_000.0 + i,
+                       "money_in": 900_000.0, "money_in_count": 40, "signups": 60 + (200 if i == 3 else 0),
+                       "finished": 20, "accounts": 0 if i == 5 else 22})
+    totals = {"transactions": 1200, "success": 960, "failed": 190, "reversed": 24, "pending": 26, "settled": 1174,
+              "success_rate": 0.8177, "failure_rate": 0.1618, "value": 18_000_000.0, "average_value": 18_750.0,
+              "money_in": 10_800_000.0, "money_in_count": 480, "signups": 920, "accounts": 240,
+              "finish_rate": 0.3, "active_users": 700, "rewards_count": 50, "rewards_value": 15_000.0}
+    reasons = [{"reason": "Insufficient funds", "side": "Customer", "count": 120, "value": 900_000.0,
+                "days": {p.start: 60, p.end: 60}, "share": 0.63, "hint": "Customers had no money.",
+                "worst_day": p.start},
+               {"reason": "Could not reach our <payment> partner", "side": "Bank or partner", "count": 70,
+                "value": 400_000.0, "days": {p.start + timedelta(days=1): 70}, "share": 0.37, "hint": "",
+                "worst_day": p.start + timedelta(days=1)}]
+    return p, {
+        "period": p, "series": series, "totals": totals,
+        "products": [{"product": "Transfers to other banks", "count": 900, "success": 700, "failed": 170,
+                      "reversed": 20, "value": 16_000_000.0, "failure_rate": 0.19, "share": 0.75}],
+        "banks": [{"bank": "OPay", "count": 400, "success": 320, "failed": 70, "value": 6e6, "failure_rate": 0.18},
+                  {"bank": "Bad Bank", "count": 50, "success": 30, "failed": 20, "value": 1e6, "failure_rate": 0.40}],
+        "reasons": reasons,
+        "funnel": [{"stage": "Signed up", "count": 920, "share": 1.0, "lost": 300},
+                   {"stage": "Account opened", "count": 276, "share": 0.3, "lost": 0}],
+        "stuck": [{"step": "Stuck at BVN check", "count": 100, "share": 0.11}],
+        "rewards": [{"type": "Welcome bonus", "count": 50, "value": 15_000.0}],
+    }
+
+
+class ReportTests(TestCase):
+    def setUp(self):
+        from .report_data import Period
+
+        self.admin = get_user_model().objects.create_superuser("boss", email="boss@dash-mfb.com",
+                                                                password="boss-Password-2026!")
+        fake = {}
+
+        def collect(period):
+            key = (period.start.isoformat(), period.end.isoformat())
+            return fake.setdefault(key, fake_report_period(*key)[1])
+
+        for target, value in (("pulse.report_data.collect", collect),
+                              ("pulse.report_data.availability", lambda cur: ["A data note."]),
+                              ("pulse.report_data.lagos_now", lambda: __import__("datetime").datetime(2026, 10, 20, 9))):
+            patcher = patch(target, side_effect=value) if callable(value) else patch(target, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def post(self, **data):
+        return self.client.post("/manage/reports/", {"period": "30", **data})
+
+    def test_only_admins_can_open_reports(self):
+        self.assertEqual(self.client.get("/manage/reports/", follow=True).redirect_chain[-1][0], "/")
+        viewer = get_user_model().objects.create_user("viewer", password="viewer-Password-2026!")
+        self.client.force_login(viewer)
+        self.assertNotEqual(self.client.get("/manage/reports/").status_code, 200)
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get("/manage/reports/"), "Operations report")
+
+    def test_presets_end_yesterday_and_custom_ranges_are_checked(self):
+        from datetime import date
+
+        from .report_data import resolve
+
+        p = resolve("7", today=date(2026, 10, 20))
+        self.assertEqual((p.start, p.end, p.days), (date(2026, 10, 13), date(2026, 10, 19), 7))
+        self.assertEqual((p.previous().start, p.previous().end), (date(2026, 10, 6), date(2026, 10, 12)))
+        p = resolve(None, "2026-10-10", "2026-10-01", today=date(2026, 10, 20))
+        self.assertEqual((p.start, p.end), (date(2026, 10, 1), date(2026, 10, 10)))
+        with self.assertRaises(ValueError):
+            resolve(None, "2024-01-01", "2026-10-01", today=date(2026, 10, 20))
+
+    def test_pdf_and_excel_downloads(self):
+        from io import BytesIO
+
+        from openpyxl import load_workbook
+
+        from .models import ReportLog
+
+        self.client.force_login(self.admin)
+        r = self.post(action="pdf")
+        self.assertEqual(r["Content-Type"], "application/pdf")
+        self.assertTrue(r.content.startswith(b"%PDF"))
+        self.assertIn("2026-09-20_to_2026-10-19.pdf", r["Content-Disposition"])
+        r = self.post(period="90", action="xlsx")
+        wb = load_workbook(BytesIO(r.content))
+        self.assertIn("Failure reasons", wb.sheetnames)
+        self.assertEqual(wb["Daily"].cell(row=5, column=2).value, 100)
+        self.assertEqual(list(ReportLog.objects.values_list("action", flat=True)), ["xlsx", "pdf"])
+
+    def test_email_goes_only_to_company_addresses_with_both_files(self):
+        from .models import ReportLog
+
+        self.client.force_login(self.admin)
+        sent = []
+        with patch("pulse.report_views.start", side_effect=lambda fn, *a: fn(*a)), \
+             patch("pulse.report_views.mailer.send", side_effect=lambda to, s, h, att: sent.append((to, s, att))):
+            r = self.post(action="email", email="someone@gmail.com")
+            self.assertContains(r, "can only be sent to @dash-mfb.com")
+            self.assertEqual(sent, [])
+            self.post(action="email", email="MD@Dash-MFB.com")
+        to, subject, attachments = sent[0]
+        self.assertEqual(to, ["md@dash-mfb.com"])
+        self.assertIn("20 Sep 2026", subject)
+        self.assertEqual([a[0].rsplit(".", 1)[1] for a in attachments], ["pdf", "xlsx"])
+        self.assertTrue(attachments[0][2].startswith(b"%PDF"))
+        self.assertEqual(ReportLog.objects.get().status, "sent")
+
+    def test_findings_and_events_read_the_figures(self):
+        from .report_data import build, resolve
+
+        report = build(resolve("30"), "boss")
+        text = " ".join(report["findings"])
+        self.assertIn("Insufficient funds", text)
+        kinds = {e[0] for e in report["events"]}
+        self.assertIn("No accounts opened", kinds)
+        self.assertIn("Sign-up spike", kinds)
+        self.assertEqual(report["notes"], ["A data note."])

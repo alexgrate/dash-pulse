@@ -58,6 +58,7 @@ nssm restart DashPulse
    MS_GRAPH_CLIENT_SECRET=<client secret value>
    MS_GRAPH_SENDER=robot@dash-mfb.com
    PULSE_FAILURE_EMAILS=ops@dash-mfb.com,someone@dash-mfb.com
+   PULSE_REPORT_EMAIL_DOMAINS=dash-mfb.com
    ```
    The `MS_GRAPH_*` values send the "set your password" emails. The Azure app needs the **Mail.Send** application permission with admin consent, and the server needs outbound HTTPS to `login.microsoftonline.com` and `graph.microsoft.com`.
 4. Check the bank connection. It must print `'+00:00', 1, 5000` (UTC, read-only, 5-second query limit):

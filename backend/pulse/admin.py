@@ -8,12 +8,13 @@ from django.shortcuts import redirect
 
 from . import accounts, mailer
 from .auth import EXPLORER_GROUP
-from .models import ExploreLog
+from .models import ExploreLog, ReportLog
 
 admin.site.site_header = "Dash Pulse · Users"
 admin.site.site_title = "Dash Pulse"
 admin.site.index_title = "Manage who can sign in"
 admin.site.site_url = "/"
+admin.site.index_template = "pulse/admin_index.html"
 admin.site.unregister(Group)
 
 
@@ -149,6 +150,21 @@ class PulseUserAdmin(UserAdmin):
 class ExploreLogAdmin(admin.ModelAdmin):
     list_display = ("at", "user", "path", "query", "ip")
     list_filter = ("user",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ReportLog)
+class ReportLogAdmin(admin.ModelAdmin):
+    list_display = ("at", "user", "start", "end", "action", "sent_to", "status")
+    list_filter = ("action", "status", "user")
 
     def has_add_permission(self, request):
         return False

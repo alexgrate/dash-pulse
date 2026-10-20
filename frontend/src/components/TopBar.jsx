@@ -1,4 +1,4 @@
-import { Activity, LogOut, ScanSearch, Siren, Users, WifiOff } from 'lucide-react'
+import { Activity, FileText, LogOut, ScanSearch, Siren, Users, WifiOff } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useClock } from '../hooks/useClock'
 import { InsightIcon, TONES } from '../lib/insights'
@@ -81,6 +81,11 @@ export default function TopBar({
                   className="inline-flex items-center gap-1.5 transition hover:text-slate-200"
                 >
                   <Users className="size-[1em]" /> Manage users
+                </a>
+              )}
+              {isAdmin && (
+                <a href="/manage/reports/" className="inline-flex items-center gap-1.5 transition hover:text-slate-200">
+                  <FileText className="size-[1em]" /> Reports
                 </a>
               )}
               <button

@@ -1,0 +1,105 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Home</a> › Reports</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .report-card { max-width: 760px; padding: 20px 24px; border: 1px solid var(--hairline-color); border-radius: 8px; background: var(--body-bg); }
+  .report-card h2 { margin: 0 0 4px; font-size: 1.15rem; }
+  .report-card p.help { margin: 0 0 18px; color: var(--body-quiet-color); }
+  .report-periods { display: flex; flex-wrap: wrap; gap: 10px; margin: 6px 0 14px; padding: 0; list-style: none; }
+  .report-periods li { margin: 0; list-style: none; }
+  .report-periods li::marker { content: ""; }
+  .report-periods label { display: inline-flex; gap: 6px; align-items: center; padding: 8px 14px; border: 1px solid var(--hairline-color); border-radius: 6px; cursor: pointer; font-weight: 500; }
+  .report-dates { display: none; gap: 16px; margin-bottom: 14px; }
+  .report-dates.on { display: flex; }
+  .report-dates label, .report-email label { display: block; font-weight: 600; margin-bottom: 4px; }
+  .report-email { margin: 18px 0 6px; }
+  .report-email input { width: 320px; }
+  .report-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+  .report-actions button { padding: 10px 18px; border-radius: 6px; border: 0; cursor: pointer; font-weight: 600; }
+  .report-actions .primary { background: var(--button-bg); color: var(--button-fg); }
+  .report-actions .secondary { background: var(--darkened-bg); color: var(--body-fg); border: 1px solid var(--hairline-color); }
+  .report-busy { display: none; margin-top: 12px; color: var(--body-quiet-color); }
+  .report-history { max-width: 760px; margin-top: 28px; }
+  .report-history table { width: 100%; }
+  .status-failed { color: var(--error-fg); font-weight: 600; }
+  .status-sending { color: var(--body-quiet-color); }
+</style>
+
+<div class="report-card">
+  <h2>Operations report</h2>
+  <p class="help">A formal report for meetings: headline figures compared with the previous period, transactions by product,
+    money in and out, failed transactions and their causes, receiving banks, onboarding, rewards, notable events and a
+    day-by-day appendix. Download it, or email the PDF and Excel file. It takes a few seconds to prepare.</p>
+
+  <form method="post" id="report-form">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<ul class="errorlist">{% for e in form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+
+    <strong>Period</strong>
+    <ul class="report-periods">
+      {% for radio in form.period %}<li>{{ radio }}</li>{% endfor %}
+    </ul>
+    <div class="report-dates" id="report-dates">
+      <div><label for="{{ form.start.id_for_label }}">From</label>{{ form.start }}</div>
+      <div><label for="{{ form.end.id_for_label }}">To</label>{{ form.end }}</div>
+    </div>
+    <p class="help">Preset periods end yesterday, so every day in the report is complete.</p>
+
+    <div class="report-actions">
+      <button type="submit" name="action" value="pdf" class="primary">Download PDF</button>
+      <button type="submit" name="action" value="xlsx" class="secondary">Download Excel</button>
+    </div>
+
+    <div class="report-email">
+      <label for="{{ form.email.id_for_label }}">Email the PDF and Excel to</label>
+      {{ form.email }}
+      <button type="submit" name="action" value="email" class="secondary" style="margin-left:8px;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600">Send</button>
+      {% if form.email.errors %}<ul class="errorlist">{% for e in form.email.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      <p class="help" style="margin-top:6px">Only {{ domains }} addresses can receive reports.</p>
+    </div>
+    <p class="report-busy" id="report-busy">Preparing the report… this can take up to half a minute for longer periods.</p>
+  </form>
+</div>
+
+<div class="report-history">
+  <h2>Recent reports</h2>
+  <table>
+    <thead><tr><th>When</th><th>By</th><th>Period</th><th>Type</th><th>Sent to</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for r in recent %}
+      <tr>
+        <td>{{ r.at|date:"d M Y, H:i" }}</td>
+        <td>{{ r.user.get_username }}</td>
+        <td>{{ r.start|date:"d M Y" }} – {{ r.end|date:"d M Y" }}</td>
+        <td>{% if r.action == "pdf" %}PDF download{% elif r.action == "xlsx" %}Excel download{% else %}Email{% endif %}</td>
+        <td>{{ r.sent_to|default:"—" }}</td>
+        <td class="status-{{ r.status }}" title="{{ r.error }}">{{ r.status }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6">No reports yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+  (function () {
+    const form = document.getElementById('report-form')
+    const dates = document.getElementById('report-dates')
+    const sync = () => dates.classList.toggle('on', form.querySelector('input[name=period]:checked')?.value === 'custom')
+    form.querySelectorAll('input[name=period]').forEach((r) => r.addEventListener('change', sync))
+    sync()
+    form.addEventListener('submit', (e) => {
+      if (e.submitter && e.submitter.value !== 'email') {
+        const busy = document.getElementById('report-busy')
+        busy.style.display = 'block'
+        setTimeout(() => (busy.style.display = 'none'), 15000)
+      }
+    })
+  })()
+</script>
+{% endblock %}

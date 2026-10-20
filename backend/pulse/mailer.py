@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 import time
@@ -61,7 +62,7 @@ def access_token():
         return _token["value"]
 
 
-def send(to, subject, html):
+def send(to, subject, html, attachments=()):
     if not configured():
         raise MailError("Email is not configured. Set the MS_GRAPH_* values in backend/.env.")
     payload = {
@@ -69,6 +70,12 @@ def send(to, subject, html):
             "subject": subject,
             "body": {"contentType": "HTML", "content": html},
             "toRecipients": [{"emailAddress": {"address": a}} for a in ([to] if isinstance(to, str) else to)],
+            "attachments": [{
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                "name": name,
+                "contentType": content_type,
+                "contentBytes": base64.b64encode(content).decode(),
+            } for name, content_type, content in attachments],
         },
         "saveToSentItems": False,
     }

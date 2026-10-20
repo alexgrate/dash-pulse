@@ -202,3 +202,4 @@ PULSE_PUBLIC_URL = os.environ.get("PULSE_PUBLIC_URL", "").rstrip("/")
 PASSWORD_RESET_TIMEOUT = 24 * 60 * 60
 
 PULSE_FAILURE_EMAILS = [e.strip() for e in os.environ.get("PULSE_FAILURE_EMAILS", "").split(",") if e.strip()]
+PULSE_REPORT_EMAIL_DOMAINS = [d.strip().lower() for d in os.environ.get("PULSE_REPORT_EMAIL_DOMAINS", "dash-mfb.com").split(",") if d.strip()]
