@@ -2,8 +2,10 @@ from io import BytesIO
 from xml.sax.saxutils import escape
 
 from django.conf import settings
-from reportlab.graphics.charts.barcharts import VerticalBarChart
+from reportlab.graphics.charts.barcharts import HorizontalBarChart, VerticalBarChart
 from reportlab.graphics.charts.legends import Legend
+from reportlab.graphics.charts.linecharts import HorizontalLineChart
+from reportlab.graphics.widgets.markers import makeMarker
 from reportlab.graphics.shapes import Drawing, String
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT
@@ -32,10 +34,14 @@ MUTED = colors.HexColor("#6b6880")
 RULE = colors.HexColor("#e2dde9")
 GOOD = colors.HexColor("#157a3c")
 BAD = colors.HexColor("#b42318")
-BLUE = colors.HexColor("#2f6fdf")
-GREEN = colors.HexColor("#22a06b")
-RED = colors.HexColor("#d64545")
+BLUE = colors.HexColor("#2a78d6")
+ORANGE = colors.HexColor("#eb6834")
+AQUA = colors.HexColor("#1baf7a")
+YELLOW = colors.HexColor("#eda100")
+MAGENTA = colors.HexColor("#e87ba4")
+DEEP_GREEN = colors.HexColor("#008300")
 GREY = colors.HexColor("#b9b4c4")
+SERIES = [BLUE, ORANGE, AQUA, YELLOW, MAGENTA, DEEP_GREEN]
 
 PAGE_W, PAGE_H = A4
 MARGIN = 18 * mm
@@ -134,12 +140,44 @@ def labels_for(dates):
     return [f"{d:%d %b}" if (last - i) % every == 0 else "" for i, d in enumerate(dates)]
 
 
-def bar_chart(title, buckets, series, unit="", stacked=False, height=62 * mm, labels=None):
+def headroom(series, stacked):
+    values = [v or 0 for _, vals, _ in series for v in vals]
+    if stacked:
+        values = [sum(v or 0 for v in col) for col in zip(*[vals for _, vals, _ in series])]
+    return max(values or [0]) * 1.18 or 1
+
+
+def legend_room(title, series):
+    if len(series) < 2:
+        return 0
+    title_w = len(title) * 5
+    legend_w = sum(len(name) * 4 + 24 for name, _, _ in series)
+    return 14 if title_w + legend_w + 24 > WIDTH else 0
+
+
+def legend_for(d, series, height):
+    legend = Legend()
+    legend.x, legend.y = WIDTH, height - 1
+    legend.boxAnchor = "ne"
+    legend.alignment = "right"
+    legend.columnMaximum = 1
+    legend.deltax = 0
+    legend.dx = 7
+    legend.dy = 7
+    legend.fontName = "Helvetica"
+    legend.fontSize = 7.5
+    legend.dxTextSpace = 4
+    legend.colorNamePairs = [(color, name) for name, _, color in series]
+    d.add(legend)
+
+
+def bar_chart(title, buckets, series, unit="", stacked=False, height=62 * mm, labels=None, value_labels=None):
     d = Drawing(WIDTH, height)
     d.add(String(0, height - 10, title, fontName="Helvetica-Bold", fontSize=9, fillColor=INK))
+    room = legend_room(title, series)
     chart = VerticalBarChart()
     chart.x, chart.y = 38, 16
-    chart.width, chart.height = WIDTH - 44, height - 36
+    chart.width, chart.height = WIDTH - 44, height - 36 - room
     chart.data = [values for _, values, _ in series]
     for i, (_, _, color) in enumerate(series):
         chart.bars[i].fillColor = color
@@ -161,23 +199,110 @@ def bar_chart(title, buckets, series, unit="", stacked=False, height=62 * mm, la
     chart.valueAxis.gridStrokeColor = RULE
     chart.valueAxis.visibleGrid = True
     chart.valueAxis.labelTextFormat = lambda v: f"{v:,.0f}{unit}"
-    chart.barSpacing = 1
-    chart.groupSpacing = 3 if len(buckets) > 20 else 6
+    chart.barSpacing = 1 if len(buckets) > 8 else 3
+    chart.groupSpacing = 3 if len(buckets) > 20 else (6 if len(buckets) > 8 else 14)
+    if value_labels:
+        chart.valueAxis.valueMax = headroom(series, stacked)
+        chart.barLabelFormat = value_labels
+        chart.barLabels.fontName = "Helvetica"
+        chart.barLabels.fontSize = 6.5
+        chart.barLabels.fillColor = INK
+        chart.barLabels.boxAnchor = "s"
+        chart.barLabels.nudge = 6
+        if stacked:
+            chart.barLabels.boxAnchor = "c"
+            chart.barLabels.nudge = 0
+            chart.barLabels.fillColor = colors.white
     d.add(chart)
-    legend = Legend()
-    legend.x, legend.y = WIDTH, height - 1
-    legend.boxAnchor = "ne"
-    legend.alignment = "right"
-    legend.columnMaximum = 1
-    legend.deltax = 0
-    legend.dx = 7
-    legend.dy = 7
-    legend.fontName = "Helvetica"
-    legend.fontSize = 7.5
-    legend.dxTextSpace = 4
-    legend.colorNamePairs = [(color, name) for name, _, color in series]
-    d.add(legend)
+    if len(series) > 1:
+        legend_for(d, series, height - room)
     return d
+
+
+def line_chart(title, labels, series, value_format, height=55 * mm, value_min=None, value_max=None):
+    d = Drawing(WIDTH, height)
+    d.add(String(0, height - 10, title, fontName="Helvetica-Bold", fontSize=9, fillColor=INK))
+    room = legend_room(title, series)
+    chart = HorizontalLineChart()
+    chart.x, chart.y = 38, 16
+    chart.width, chart.height = WIDTH - 44, height - 36 - room
+    chart.data = [values for _, values, _ in series]
+    for i, (_, _, color) in enumerate(series):
+        chart.lines[i].strokeColor = color
+        chart.lines[i].strokeWidth = 2
+        chart.lines[i].symbol = makeMarker("Circle", size=3.5, fillColor=color, strokeColor=colors.white)
+    chart.categoryAxis.categoryNames = labels
+    chart.categoryAxis.labels.fontName = "Helvetica"
+    chart.categoryAxis.labels.fontSize = 6.5
+    chart.categoryAxis.labels.dy = -3
+    chart.categoryAxis.strokeColor = RULE
+    chart.categoryAxis.tickDown = 0
+    chart.valueAxis.labels.fontName = "Helvetica"
+    chart.valueAxis.labels.fontSize = 6.5
+    chart.valueAxis.labels.fillColor = MUTED
+    chart.valueAxis.strokeColor = RULE
+    chart.valueAxis.gridStrokeColor = RULE
+    chart.valueAxis.visibleGrid = True
+    chart.valueAxis.labelTextFormat = value_format
+    if value_min is not None:
+        chart.valueAxis.valueMin = value_min
+    if value_max is not None:
+        chart.valueAxis.valueMax = value_max
+    chart.joinedLines = 1
+    d.add(chart)
+    if len(series) > 1:
+        legend_for(d, series, height - room)
+    return d
+
+
+def hbar_chart(title, labels, series, value_labels, row=None, label_width=150):
+    row = row or (7 + 5 * len(series))
+    room = legend_room(title, series)
+    height = 34 + room + row * len(labels)
+    d = Drawing(WIDTH, height)
+    d.add(String(0, height - 10, title, fontName="Helvetica-Bold", fontSize=9, fillColor=INK))
+    chart = HorizontalBarChart()
+    chart.x, chart.y = label_width, 6
+    chart.width, chart.height = WIDTH - label_width - 34, height - 30 - room
+    chart.data = [list(reversed(values)) for _, values, _ in reversed(series)]
+    for i, (_, _, color) in enumerate(reversed(series)):
+        chart.bars[i].fillColor = color
+        chart.bars[i].strokeColor = None
+    chart.categoryAxis.categoryNames = list(reversed(labels))
+    chart.categoryAxis.labels.fontName = "Helvetica"
+    chart.categoryAxis.labels.fontSize = 7
+    chart.categoryAxis.labels.boxAnchor = "e"
+    chart.categoryAxis.labels.dx = -4
+    chart.categoryAxis.strokeColor = RULE
+    chart.categoryAxis.tickLeft = 0
+    chart.valueAxis.visible = False
+    chart.valueAxis.valueMin = 0
+    chart.valueAxis.valueMax = headroom(series, False)
+    chart.barSpacing = 1
+    chart.groupSpacing = 6
+    chart.barLabelFormat = value_labels
+    chart.barLabels.fontName = "Helvetica"
+    chart.barLabels.fontSize = 6.5
+    chart.barLabels.fillColor = INK
+    chart.barLabels.boxAnchor = "w"
+    chart.barLabels.nudge = 6
+    d.add(chart)
+    if len(series) > 1:
+        legend_for(d, series, height - room)
+    return d
+
+
+def callout(text):
+    t = Table([[Paragraph(text, S["body"])]], colWidths=[WIDTH])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), BRAND_SOFT),
+        ("LINEBEFORE", (0, 0), (0, -1), 2.5, BRAND),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+    ]))
+    return t
 
 
 class NumberedCanvas(canvas.Canvas):
@@ -315,8 +440,8 @@ def build_pdf(report):
     story.append(bar_chart(
         f"Transactions per {'week (dated by week start)' if weekly else 'day'}",
         buckets,
-        [("Successful", [b["success"] for b in buckets], GREEN),
-         ("Failed", [b["failed"] for b in buckets], RED),
+        [("Successful", [b["success"] for b in buckets], BLUE),
+         ("Failed", [b["failed"] for b in buckets], ORANGE),
          ("Reversed or pending", [b["transactions"] - b["success"] - b["failed"] for b in buckets], GREY)],
         stacked=True,
     ))
@@ -349,9 +474,9 @@ def build_pdf(report):
                      "netted against each other.")
     story.append(p(" ".join(lines)))
     story.append(Spacer(1, 3 * mm))
-    money_series = [("Money sent (NGN m)", [b["value"] / 1e6 for b in buckets], BRAND)]
+    money_series = [("Money sent (NGN m)", [b["value"] / 1e6 for b in buckets], BLUE)]
     if t["money_in"] is not None:
-        money_series.append(("Money in (NGN m)", [(b["money_in"] or 0) / 1e6 for b in buckets], BLUE))
+        money_series.append(("Money in (NGN m)", [(b["money_in"] or 0) / 1e6 for b in buckets], AQUA))
     story.append(bar_chart(f"Money per {'week (dated by week start)' if weekly else 'day'} (NGN millions)", buckets, money_series,
                            unit="m"))
 
@@ -423,7 +548,7 @@ def build_pdf(report):
         Spacer(1, 3 * mm),
         bar_chart(f"Sign-ups and accounts opened per {'week (dated by week start)' if weekly else 'day'}", buckets,
                   [("Sign-ups started", [b["signups"] for b in buckets], BLUE),
-                   ("Accounts opened", [b["accounts"] for b in buckets], GREEN)]),
+                   ("Accounts opened", [b["accounts"] for b in buckets], AQUA)]),
     ]))
     funnel_note = []
     if cur["funnel"] and cur["funnel"][-1]["count"] != t["accounts"]:

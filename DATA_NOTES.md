@@ -132,6 +132,8 @@ Admins can download or email an operations report for the last 7, 30 or 90 days 
 
 Calendar months or quarters side by side (2 to 6), PDF download or email to company addresses. Each period is a full `collect()` run, so six periods cost six reports of queries. Options start at the period holding the first transaction (`ORDER BY ID LIMIT 1`). A period that began before records, or before accounts/money in were recorded, has those totals marked * and never compared. The current period runs to yesterday, is labelled "so far", and its totals are only compared as daily averages; rates (success rate, finish rate, average transaction) are compared directly.
 
+The PDF has headlines, a scorecard with daily averages, then transactions, money, failures, receiving banks, onboarding, rewards and notable events, each with a plain-English summary and a "Key point" box, plus month-by-month (quarters) and week-by-week appendices. Charts in both reports use the colour-blind-checked palette in report_pdf.py (BLUE, ORANGE, AQUA, ...; validated with the dataviz validator); bars carry value labels because some colours are light.
+
 ## Active users
 
 UM_LOGIN_TRAIL records every sign-in, and people get a login at the start of onboarding, before they have an account. So distinct usernames in the trail overstate customers (Q3 2026: 63,261 logins against about 27,000 accounts). Active users therefore counts only sign-ins whose username matches an account in `dashmfb-cba-mcs`.accounts, by email (lower-case, trimmed) or by the last 10 digits of the phone number.
