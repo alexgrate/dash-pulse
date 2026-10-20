@@ -26,6 +26,18 @@ LOGINS = "`dashmfb-mcs`.UM_LOGIN_TRAIL"
 ONBOARDING = "`dashmfb-mcs`.DashMFB_UM_ONBOARDING_PROCESS"
 REWARDS = "`dashmfb-cba-mcs`.quest_reward_transactions"
 WEBHOOKS = "`dashmfb-cba-mcs`.webhook_events"
+ACCOUNTS = "`dashmfb-cba-mcs`.accounts"
+
+LOGIN_ID_SQL = """CASE WHEN USERNAME LIKE '%%@%%' THEN LOWER(TRIM(USERNAME))
+                       ELSE RIGHT(REGEXP_REPLACE(USERNAME, '[^0-9]', ''), 10) END"""
+
+ACCOUNT_IDS_SQL = f"""(
+    SELECT LOWER(TRIM(customer_email_address)) COLLATE utf8mb4_unicode_ci AS id
+    FROM {ACCOUNTS} WHERE customer_email_address LIKE '%%@%%'
+    UNION
+    SELECT RIGHT(REGEXP_REPLACE(customer_phone_number, '[^0-9]', ''), 10) COLLATE utf8mb4_unicode_ci
+    FROM {ACCOUNTS} WHERE customer_phone_number IS NOT NULL AND customer_phone_number <> ''
+)"""
 LIVENESS = "`dashmfb-mcs`.LIVENESS_CHECK_LOG"
 
 RECENT_MINUTES = 15
@@ -199,10 +211,14 @@ def transactions(w):
 
 def active_users(w):
     return by_bucket(fetch(f"""
-        SELECT {BUCKET_SQL.format(col="LOGIN_TIME")} AS bucket, COUNT(DISTINCT USERNAME) AS n
-        FROM {LOGINS}
-        WHERE LOGIN_TIME >= %(yesterday)s AND LOGIN_TIME < %(now)s
-        GROUP BY bucket
+        SELECT t.bucket, COUNT(DISTINCT t.login_id) AS n
+        FROM (
+            SELECT {BUCKET_SQL.format(col="LOGIN_TIME")} AS bucket, {LOGIN_ID_SQL} AS login_id
+            FROM {LOGINS}
+            WHERE LOGIN_TIME >= %(yesterday)s AND LOGIN_TIME < %(now)s
+        ) t
+        JOIN {ACCOUNT_IDS_SQL} a ON a.id = t.login_id COLLATE utf8mb4_unicode_ci
+        GROUP BY t.bucket
     """, w))
 
 

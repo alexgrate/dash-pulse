@@ -127,3 +127,7 @@ Day (last 30), week (last 12, Monday start) and month (last 12) totals, cached 5
 ## Reports (pulse/report_data.py, report_pdf.py, report_xlsx.py; /manage/reports/)
 
 Admins can download or email an operations report for the last 7, 30 or 90 days (ending yesterday) or a custom range of up to 370 days. Every figure uses the same rules as the dashboard and is compared with the same number of days immediately before. The PDF uses NGN because the built-in PDF fonts have no ₦ sign; the Excel file uses ₦. Emails only go to domains in PULSE_REPORT_EMAIL_DOMAINS (default dash-mfb.com) and are built in a background thread. Every download and email is recorded in ReportLog. Reports contain totals only, no customer names or account numbers.
+
+## Active users
+
+UM_LOGIN_TRAIL records every sign-in, and people get a login at the start of onboarding, before they have an account. So distinct usernames in the trail overstate customers (Q3 2026: 63,261 logins against about 27,000 accounts). Active users therefore counts only sign-ins whose username matches an account in `dashmfb-cba-mcs`.accounts, by email (lower-case, trimmed) or by the last 10 digits of the phone number.

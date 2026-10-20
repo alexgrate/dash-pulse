@@ -482,7 +482,7 @@ class Seeder:
         location, _, _ = place()
         os_name = "ios" if uid % 100 < 10 or random.random() < 0.005 else "ANDROID"
         device = f"dev-{uid:07d}" if random.random() < 0.95 else f"dev-{uuid.uuid4().hex[:12]}"
-        self.w.add("login", (device, username(uid), location, os_name, ts + WAT, TENANT))
+        self.w.add("login", (device, person(uid)["email"], location, os_name, ts + WAT, TENANT))
 
     def reset_token(self, ts):
         local = ts + WAT

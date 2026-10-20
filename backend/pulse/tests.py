@@ -636,10 +636,10 @@ def fake_report_period(start, end):
               "success_rate": 0.8177, "failure_rate": 0.1618, "value": 18_000_000.0, "average_value": 18_750.0,
               "money_in": 10_800_000.0, "money_in_count": 480, "signups": 920, "accounts": 240,
               "finish_rate": 0.3, "active_users": 700, "rewards_count": 50, "rewards_value": 15_000.0}
-    reasons = [{"reason": "Insufficient funds", "side": "Customer", "count": 120, "value": 900_000.0,
+    reasons = [{"reason": "Insufficient funds", "side": "Customer", "count": 120, "value": 900_000.0, "absurd": 1,
                 "days": {p.start: 60, p.end: 60}, "share": 0.63, "hint": "Customers had no money.",
                 "worst_day": p.start},
-               {"reason": "Could not reach our <payment> partner", "side": "Bank or partner", "count": 70,
+               {"reason": "Could not reach our <payment> partner", "side": "Bank or partner", "count": 70, "absurd": 0,
                 "value": 400_000.0, "days": {p.start + timedelta(days=1): 70}, "share": 0.37, "hint": "",
                 "worst_day": p.start + timedelta(days=1)}]
     return p, {
@@ -669,7 +669,7 @@ class ReportTests(TestCase):
             return fake.setdefault(key, fake_report_period(*key)[1])
 
         for target, value in (("pulse.report_data.collect", collect),
-                              ("pulse.report_data.availability", lambda cur: ["A data note."]),
+                              ("pulse.report_data.availability", lambda cur, prev: ["A data note."]),
                               ("pulse.report_data.lagos_now", lambda: __import__("datetime").datetime(2026, 10, 20, 9))):
             patcher = patch(target, side_effect=value) if callable(value) else patch(target, value)
             patcher.start()
@@ -745,3 +745,23 @@ class ReportTests(TestCase):
         self.assertIn("No accounts opened", kinds)
         self.assertIn("Sign-up spike", kinds)
         self.assertEqual(report["notes"], ["A data note."])
+
+
+class ReportRuleTests(SimpleTestCase):
+    def test_new_reason_rules(self):
+        self.assertEqual(classify("No record found for the account")[0], "Wrong account number entered")
+        self.assertEqual(classify("Destination System malfunction"), ("Receiving bank is down", "system"))
+        self.assertEqual(classify("Account Name Mismatch")[1], "customer")
+        self.assertEqual(classify("An unexpected error occurred. Please contact support.")[0], "Our system had an error")
+
+    def test_availability_warns_about_small_base_and_absurd_amounts(self):
+        from .report_data import availability
+
+        _, cur = fake_report_period("2026-07-01", "2026-09-30")
+        _, prev = fake_report_period("2026-03-31", "2026-06-30")
+        prev["totals"] = {**prev["totals"], "transactions": 100}
+        with patch("pulse.report_data.fetch", return_value=[{"d": None}]), \
+             patch("pulse.report_data.lagos_now", return_value=__import__("datetime").datetime(2026, 10, 20, 9)):
+            notes = availability(cur, prev)
+        self.assertTrue(any("small starting point" in n for n in notes))
+        self.assertTrue(any("impossible amounts" in n for n in notes))

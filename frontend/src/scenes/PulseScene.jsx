@@ -67,7 +67,7 @@ export default function PulseScene({ data }) {
             <AnimatedNumber value={today.failed} />
             <Delta today={today.failed} yesterday={yesterday.failed} invert label="vs yesterday" />
           </Stat>
-          <Stat label="Active users" delay={0.45}>
+          <Stat label="Active users" note="Account holders who signed in today." delay={0.45}>
             <AnimatedNumber value={users.today} />
             <Delta today={users.today} yesterday={users.yesterday} label="vs yesterday" />
           </Stat>

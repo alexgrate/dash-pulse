@@ -9,13 +9,15 @@ RULES = [
     (r"insufficient (funds|balance)", "Insufficient funds", "customer"),
     (r"account on pnd|post.?no.?debit", "Customer's account is frozen", "account"),
     (r"debit limit|transfer limit|limit exceeded", "Transfer limit exceeded", "customer"),
-    (r"invalid (virtual )?account|unknown bank|invalid beneficiary", "Wrong account number entered", "customer"),
-    (r"beneficiary institution not available|bank not available|institution not available", "Receiving bank is down", "system"),
+    (r"invalid (virtual )?account|unknown bank|invalid beneficiary|no record found", "Wrong account number entered", "customer"),
+    (r"name mismatch", "Account name does not match", "customer"),
+    (r"beneficiary institution not available|bank not available|institution not available|system malfunction", "Receiving bank is down", "system"),
     (r"timed? ?out|timeout", "Receiving bank took too long to reply", "system"),
     (r"http error|connection|service unavailable", "Could not reach our payment partner", "system"),
     (r"request in progress|in progress|pending", "Waiting for payment partner to confirm", "system"),
     (r"invalid amount|invalid json|must not be blank|format error|validation", "Our app sent a faulty request", "system"),
-    (r"do not honou?r", "Receiving bank refused it", "system"),
+    (r"do not honou?r|not permitted", "Receiving bank refused it", "system"),
+    (r"unexpected error", "Our system had an error", "system"),
 ]
 
 COMPILED = [(re.compile(p, re.I), label, kind) for p, label, kind in RULES]
@@ -31,6 +33,8 @@ HINTS = {
     "Waiting for payment partner to confirm": "Our payment partner has not yet said whether these went through.",
     "Our app sent a faulty request": "The Dash app sent something our payment partner rejected. Likely a bug for the tech team.",
     "Receiving bank refused it": "The other bank declined these transfers.",
+    "Account name does not match": "The name on the receiving account did not match what was expected.",
+    "Our system had an error": "Dash's own system returned an unexpected error. Worth raising with the tech team.",
     NOT_RECORDED: "Failures saved without any message. A logging gap worth raising.",
 }
 

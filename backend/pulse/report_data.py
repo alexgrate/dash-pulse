@@ -6,7 +6,9 @@ from django.db import DatabaseError
 
 from . import banks as bank_names
 from .queries import (
+    ACCOUNT_IDS_SQL,
     FUNNEL_STAGES,
+    LOGIN_ID_SQL,
     LEGACY,
     LOGINS,
     ONBOARDING,
@@ -23,6 +25,8 @@ from .queries import (
 from .reasons import HINTS, REASON_SQL, classify
 
 PRESETS = {"7": 7, "30": 30, "90": 90}
+MAX_SENSIBLE_AMOUNT = 100_000_000
+SMALL_BASE = 0.25
 MAX_DAYS = 370
 DAILY_CHART_MAX_DAYS = 35
 
@@ -129,7 +133,9 @@ def transactions(p):
 
 def failures(p):
     rows = fetch(f"""
-        SELECT DATE(l.CREATED) AS d, {REASON_SQL} AS message, COUNT(*) AS n, COALESCE(SUM(l.AMOUNT), 0) AS value
+        SELECT DATE(l.CREATED) AS d, {REASON_SQL} AS message, COUNT(*) AS n,
+               COALESCE(SUM(CASE WHEN l.AMOUNT <= {MAX_SENSIBLE_AMOUNT} THEN l.AMOUNT ELSE 0 END), 0) AS value,
+               SUM(l.AMOUNT > {MAX_SENSIBLE_AMOUNT}) AS absurd
         FROM {LEGACY} l
         LEFT JOIN {PAYMENTS} p
                ON p.payment_reference = l.PAYMENT_REFERENCE COLLATE utf8mb4_unicode_ci
@@ -140,8 +146,9 @@ def failures(p):
     for r in rows:
         label, kind = classify(r["message"])
         item = reasons.setdefault(label, {"reason": label, "side": SIDES.get(kind, "Other"), "count": 0,
-                                          "value": 0.0, "days": defaultdict(int)})
+                                          "value": 0.0, "absurd": 0, "days": defaultdict(int)})
         item["count"] += int(r["n"])
+        item["absurd"] += int(r["absurd"] or 0)
         item["value"] += float(r["value"])
         item["days"][r["d"]] += int(r["n"])
     return reasons
@@ -214,8 +221,12 @@ def onboarding(p):
 
 def active_users(p):
     return int(fetch(f"""
-        SELECT COUNT(DISTINCT USERNAME) AS n FROM {LOGINS}
-        WHERE LOGIN_TIME >= %(since)s AND LOGIN_TIME < %(until)s
+        SELECT COUNT(DISTINCT t.login_id) AS n
+        FROM (
+            SELECT {LOGIN_ID_SQL} AS login_id FROM {LOGINS}
+            WHERE LOGIN_TIME >= %(since)s AND LOGIN_TIME < %(until)s
+        ) t
+        JOIN {ACCOUNT_IDS_SQL} a ON a.id = t.login_id COLLATE utf8mb4_unicode_ci
     """, p.params)[0]["n"])
 
 
@@ -398,7 +409,7 @@ COMPARE = [
     ("Sign-ups started", "signups", "count", False, True),
     ("Accounts opened", "accounts", "count", False, True),
     ("Sign-ups that finished", "finish_rate", "pct", True, True),
-    ("Active users", "active_users", "count", False, True),
+    ("Customers who signed in", "active_users", "count", False, True),
     ("Rewards paid", "rewards_value", "money", False, None),
 ]
 
@@ -494,18 +505,29 @@ def notable_events(cur):
     return out
 
 
-def availability(cur):
+def availability(cur, prev):
     notes = []
+    earliest = prev["period"].start
     first_open = safe(lambda: fetch(f"SELECT MIN(ACCOUNT_OPENED_DATE) AS d FROM {ONBOARDING}", {})[0]["d"])
-    if first_open and first_open.date() > cur["period"].start:
-        notes.append(f"Account opening dates are only recorded from {first_open:%d %B %Y}; "
-                     f"accounts opened before then are not counted per day.")
+    if first_open and first_open.date() > earliest:
+        notes.append(f"Account opening dates are only recorded from {first_open:%d %B %Y}, so accounts opened "
+                     f"before then are missing from the daily counts and from the comparison.")
     if cur["totals"]["money_in"] is None:
         notes.append("Money in could not be read for this report.")
     else:
         first_in = safe(lambda: fetch(f"SELECT MIN(created_at) AS d FROM {WEBHOOKS}", {})[0]["d"])
-        if first_in and (first_in + WAT).date() > cur["period"].start:
-            notes.append(f"Money in from other banks is only recorded from {(first_in + WAT):%d %B %Y}.")
+        if first_in and (first_in + WAT).date() > earliest:
+            notes.append(f"Money in from other banks is only recorded from {(first_in + WAT):%d %B %Y}, "
+                         f"so it is understated before then.")
+    before, now = prev["totals"]["transactions"], cur["totals"]["transactions"]
+    if now and before < now * SMALL_BASE:
+        notes.append(f"The previous period had far less activity ({before:,} transactions against {now:,}), "
+                     f"so the percentage changes mostly reflect growth from a small starting point and should "
+                     f"not be read as like-for-like performance.")
+    absurd = sum(r["absurd"] for r in cur["reasons"])
+    if absurd:
+        notes.append(f"{absurd:,} failed attempts had impossible amounts (over NGN {MAX_SENSIBLE_AMOUNT:,}), "
+                     f"usually mistyped; they are counted as failures but left out of failure values.")
     if cur["totals"]["active_users"] is None:
         notes.append("Active users could not be counted for this period (the query took too long).")
     if cur["period"].end >= lagos_now().date():
@@ -524,7 +546,7 @@ def build(period, generated_by=""):
         "comparison": comparison(cur, prev),
         "findings": findings(cur, prev),
         "events": notable_events(cur),
-        "notes": availability(cur),
+        "notes": availability(cur, prev),
         "weekly": weekly(cur["series"]),
         "generated_at": lagos_now(),
         "generated_by": generated_by,

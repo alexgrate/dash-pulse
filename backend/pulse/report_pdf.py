@@ -297,6 +297,9 @@ def build_pdf(report):
         p("1. Executive summary", "h1"),
     ]
     story += [Paragraph(escape(f), S["bullet"], bulletText="•") for f in report["findings"]]
+    if report["notes"]:
+        story += [Spacer(1, 2 * mm), p("Read with care", "h2")]
+        story += [Paragraph(escape(n), S["bullet"], bulletText="!") for n in report["notes"]]
     story += [Spacer(1, 4 * mm), p("Period at a glance", "h2"), comparison_table(report)]
 
     story += section("2. Transactions")
@@ -405,7 +408,8 @@ def build_pdf(report):
     story.append(KeepTogether([
         p(f"<b>{num(t['signups'])}</b> people started signing up and <b>{num(t['accounts'])}</b> accounts were "
           f"opened. Of the people who started in this period, <b>{pct(t['finish_rate'])}</b> now have an account."
-          + (f" <b>{num(t['active_users'])}</b> different customers signed in." if t["active_users"] is not None
+          + (f" <b>{num(t['active_users'])}</b> different account holders signed in to the app."
+             if t["active_users"] is not None
              else "")),
         Spacer(1, 3 * mm),
         bar_chart(f"Sign-ups and accounts opened per {'week (dated by week start)' if weekly else 'day'}", buckets,
@@ -486,5 +490,7 @@ DEFINITIONS = [
     ("Sign-ups started", "people who began creating an account in the app, counted on the day they started."),
     ("Accounts opened", "accounts actually created, counted on the day of opening."),
     ("Finished", "of the people who started in the period, the share who have an account now."),
+    ("Customers who signed in", "different people with an account who signed in to the app during the period. "
+                                "People who created a login but never finished opening an account are left out."),
     ("Previous period", "the same number of days immediately before the reporting period."),
 ]
