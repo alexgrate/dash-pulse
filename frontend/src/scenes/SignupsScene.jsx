@@ -66,8 +66,11 @@ function Summary({ label, note, period, onPick, delay }) {
       </div>
       <div className="tabular mt-1 text-[clamp(22px,2.2vw,46px)] leading-none font-semibold">{num(period.signups)}</div>
       <div className="mt-1 text-[clamp(10px,0.8vw,16px)] leading-snug text-muted">
-        sign-ups · <span className="text-good">{num(period.opened)} opened</span>
-        {period.finished_share != null && <> · {pct(period.finished_share, 0)} finished</>}
+        started signing up · {num(period.finished)} of them have an account
+        {period.finished_share != null && <> ({pct(period.finished_share, 0)})</>}
+      </div>
+      <div className="mt-0.5 text-[clamp(10px,0.8vw,16px)] leading-snug text-good">
+        {num(period.opened)} accounts opened in total
       </div>
     </>
   )
@@ -102,10 +105,10 @@ function History({ by, items, title, span, onPick, delay }) {
         <div className="flex shrink-0 items-center gap-4 text-[clamp(10px,0.75vw,15px)] text-muted">
           {onPick && by === 'day' && <span className="text-brand-soft">Click any card or bar to see the people</span>}
           <span className="flex items-center gap-1.5">
-            <span className="size-2.5 rounded-sm bg-accent/35" /> Sign-ups
+            <span className="size-2.5 rounded-sm bg-accent/35" /> Started signing up
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="size-2.5 rounded-sm bg-good" /> Accounts opened
+            <span className="size-2.5 rounded-sm bg-good" /> Accounts opened that {PERIOD[by]}
           </span>
         </div>
       </div>
@@ -122,12 +125,16 @@ function History({ by, items, title, span, onPick, delay }) {
                 {TITLES[by](p)}
                 {p.current ? ' (so far)' : ''}
               </TipTitle>
-              <TipRow label="Sign-ups started" value={num(p.signups)} color="var(--color-accent)" />
-              <TipRow label="Accounts opened" value={num(p.opened)} color="var(--color-good)" />
-              <TipRow label="Finished" value={p.finished_share == null ? '—' : pct(p.finished_share, 0)} />
+              <TipRow label="Started signing up" value={num(p.signups)} color="var(--color-accent)" />
+              <TipRow
+                label="Of those, have an account"
+                value={`${num(p.finished)}${p.finished_share == null ? '' : ` (${pct(p.finished_share, 0)})`}`}
+              />
+              <TipRow label="Of those, not finished" value={num(p.signups - p.finished)} />
+              <TipRow label={`Accounts opened this ${PERIOD[by]}`} value={num(p.opened)} color="var(--color-good)" />
               <TipNote>
-                Finished: of the people who started in this {PERIOD[by]}, how many have an account now.
-                {onPick ? ' Click to see the people.' : ''}
+                Accounts opened counts every account opened this {PERIOD[by]}, including people who started earlier, so
+                it can be higher than “have an account”.{onPick ? ' Click to see the people.' : ''}
               </TipNote>
             </>
           )

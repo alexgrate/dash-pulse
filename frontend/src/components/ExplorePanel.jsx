@@ -540,11 +540,22 @@ function PeopleView({ frame, onChange, onOpen }) {
   const set = (patch) => onChange({ ...patch, page: patch.page ?? 1 })
   const isToday = f.date === todayIso()
   const ranged = Boolean(f.until && f.until !== f.date)
+  const what = f.mode === 'opened' ? 'Accounts opened' : 'Sign-ups'
   const title = allTime
     ? 'All accounts ever opened'
     : ranged
-      ? `Sign-ups ${shortDay(f.date)} – ${shortDay(f.until)}`
-      : `${f.mode === 'opened' ? 'Accounts opened' : 'Sign-ups'} ${isToday ? 'today' : `on ${dayName(f.date)}`}`
+      ? `${what} ${shortDay(f.date)} – ${shortDay(f.until)}`
+      : `${what} ${isToday ? 'today' : `on ${dayName(f.date)}`}`
+  const scope = ranged ? 'in this period' : isToday ? 'today' : 'on this day'
+  const explain = allTime
+    ? 'accounts opened in total.'
+    : f.mode === 'opened'
+      ? `accounts were opened ${scope}. This includes people who started signing up on an earlier day.`
+      : f.stage === 'opened'
+        ? `of the people who started signing up ${scope} now have an account.`
+        : f.stage === 'not_opened'
+          ? `of the people who started signing up ${scope} have not finished yet.`
+          : `people started signing up ${scope}.`
   const pill = (on) =>
     `rounded-full px-3 py-1 text-xs ${on ? 'bg-brand text-white ring-1 ring-brand-soft/40' : 'bg-white/5 text-muted hover:text-slate-100'}`
   const step =
@@ -555,10 +566,33 @@ function PeopleView({ frame, onChange, onOpen }) {
       <div className="text-xs tracking-[0.18em] text-muted uppercase">{copy.eyebrow}</div>
       <h2 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h2>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      {!allTime && (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className={pill(f.mode === 'signups')}
+            onClick={() => set({ mode: 'signups', stage: undefined })}
+          >
+            People who started {scope}
+          </button>
+          <button
+            type="button"
+            className={pill(f.mode === 'opened')}
+            onClick={() => set({ mode: 'opened', stage: undefined })}
+          >
+            Accounts opened {scope}
+          </button>
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         {f.mode === 'opened' && (
           <>
-            <button type="button" className={pill(!allTime)} onClick={() => set({ date: todayIso() })}>
+            <button
+              type="button"
+              className={pill(!allTime)}
+              onClick={() => set({ date: allTime ? todayIso() : f.date, until: allTime ? undefined : f.until })}
+            >
               By day
             </button>
             <button type="button" className={pill(allTime)} onClick={() => set({ date: 'all' })}>
@@ -614,8 +648,9 @@ function PeopleView({ frame, onChange, onOpen }) {
       ) : (
         <div className={loading ? 'opacity-50' : ''}>
           <div className="mt-4 text-sm text-muted">
-            <span className="tabular text-lg font-semibold text-slate-100">{num(data.total)}</span> {copy.noun}
-            {f.search ? ' matching your search' : ''}. Click someone with an account to see their transactions.
+            <span className="tabular text-lg font-semibold text-slate-100">{num(data.total)}</span> {explain}
+            {f.search ? ' Only those matching your search are counted.' : ''} Click someone with an account to see their
+            transactions.
           </div>
 
           <div className="mt-3 overflow-hidden rounded-2xl border border-white/10">
@@ -814,9 +849,13 @@ function SignupHistoryView({ frame, onChange, onOpen }) {
         <div className={loading ? 'opacity-50' : ''}>
           <div className="mt-4 grid grid-cols-3 gap-2 text-center">
             {[
-              ['Sign-ups', num(totals.signups), 'text-slate-100'],
-              ['Accounts opened', num(totals.opened), 'text-good'],
-              ['Finished', totals.signups ? pct(totals.finished / totals.signups, 0) : '—', 'text-accent'],
+              ['Started signing up', num(totals.signups), 'text-slate-100'],
+              [
+                'Of those, have an account',
+                `${num(totals.finished)}${totals.signups ? ` (${pct(totals.finished / totals.signups, 0)})` : ''}`,
+                'text-accent',
+              ],
+              ['Accounts opened in total', num(totals.opened), 'text-good'],
             ].map(([label, value, tone]) => (
               <div key={label} className="rounded-xl bg-white/[0.03] py-2">
                 <div className={`tabular text-lg font-semibold ${tone}`}>{value}</div>
@@ -827,16 +866,17 @@ function SignupHistoryView({ frame, onChange, onOpen }) {
             ))}
           </div>
           <div className="mt-2 text-xs text-muted">
-            Finished: of the people who started in that period, how many have an account now. Click a row to see the
+            “Have an account” follows the people who started in that period. “Accounts opened” counts every account
+            opened in the period, including people who started earlier, so it can be higher. Click a row to see the
             people.
           </div>
           <div className="mt-3 overflow-hidden rounded-2xl border border-white/10">
             <div className={`${cols} bg-white/[0.03] px-4 py-2 text-[11px] tracking-[0.14em] text-muted uppercase`}>
               <span>{by === 'day' ? 'Day' : by === 'week' ? 'Week' : 'Month'}</span>
               <span />
-              <span className="text-right">Sign-ups</span>
+              <span className="text-right">Started</span>
+              <span className="text-right">Have account</span>
               <span className="text-right">Opened</span>
-              <span className="text-right">Finished</span>
             </div>
             {items.map((i) => (
               <button
@@ -856,10 +896,11 @@ function SignupHistoryView({ frame, onChange, onOpen }) {
                   />
                 </span>
                 <span className="tabular text-right text-slate-100">{num(i.signups)}</span>
-                <span className="tabular text-right text-good">{num(i.opened)}</span>
                 <span className="tabular text-right text-muted">
-                  {i.finished_share == null ? '—' : pct(i.finished_share, 0)}
+                  {num(i.finished)}
+                  {i.finished_share != null && <span className="text-xs"> ({pct(i.finished_share, 0)})</span>}
                 </span>
+                <span className="tabular text-right text-good">{num(i.opened)}</span>
               </button>
             ))}
           </div>
