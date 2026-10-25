@@ -7,12 +7,84 @@ from django.views.decorators.http import require_GET
 
 from . import banks as bank_names
 from .auth import explorer_required
+from .export import MAX_ROWS, excel_response, wants_excel
+from .live import KINDS
+from .report_data import SIDES
 from .queries import FUNNEL_DAYS, LEGACY, WEBHOOKS, ONBOARDING, OUTCOME_SQL, PAYMENTS, PHASE_LABELS, WAT, fetch, lagos_now
 from .reasons import REASON_SQL, classify
 
 ACCOUNTS = "`dashmfb-cba-mcs`.accounts"
 PAGE_SIZE = 50
 STATUSES = {"SUCCESS", "FAILED", "REVERSED", "PENDING"}
+OUTCOME_LABELS = {"SUCCESS": "Successful", "FAILED": "Failed", "REVERSED": "Reversed", "PENDING": "Pending"}
+TX_COLUMNS = [
+    ("Time", "at"),
+    ("Last updated", "updated"),
+    ("Type", "type"),
+    ("Amount (NGN)", "amount"),
+    ("Status", "status"),
+    ("Failure reason", "reason"),
+    ("Who caused it", "side"),
+    ("Customer name", "customer_name"),
+    ("Customer account", "account"),
+    ("Customer phone", "customer_phone"),
+    ("Customer email", "customer_email"),
+    ("Beneficiary name", "beneficiary"),
+    ("Beneficiary account", "beneficiary_account"),
+    ("Receiving bank", "bank"),
+    ("Bank code", "bank_code"),
+    ("Narration", "narration"),
+    ("Payment reference", "reference"),
+    ("Core banking reference", "cba_reference"),
+    ("Provider reference", "provider_reference"),
+    ("NIP session ID", "session_id"),
+    ("Provider", "provider"),
+    ("Payment status (core banking)", "payment_status"),
+    ("Payment response code", "payment_code"),
+    ("Requery count", "requery_count"),
+    ("Core banking response", "cba_ok"),
+    ("Core banking message", "cba_message"),
+    ("Provider response code", "provider_code"),
+    ("Provider message", "provider_message"),
+    ("Reversal message", "reversal_message"),
+    ("Reversed at", "reversed_at"),
+]
+PEOPLE_COLUMNS = [
+    ("Name", "name"),
+    ("Account number", "account"),
+    ("Account status", "status"),
+    ("Email", "email"),
+    ("Phone", "phone"),
+    ("Started signing up", "started"),
+    ("Account opened", "opened"),
+    ("Minutes to open", "minutes_to_open"),
+    ("Where they are", "stage"),
+]
+MONEY_IN_COLUMNS = [
+    ("Time", "at"),
+    ("Account number", "account"),
+    ("Account name", "name"),
+    ("Amount (NGN)", "amount"),
+    ("Narration", "narration"),
+    ("Provider reference", "ref"),
+]
+ONBOARDING_COLUMNS = [
+    ("Name", "name"),
+    ("Email", "email"),
+    ("Phone", "phone"),
+    ("Started", "started"),
+    ("Last activity", "last_activity"),
+    ("Waiting (hours)", "waiting_hours"),
+    ("Next step", "next_step"),
+]
+HISTORY_COLUMNS = [
+    ("Period start", "start"),
+    ("Period end", "end"),
+    ("Started signing up", "signups"),
+    ("Of those, have an account", "finished"),
+    ("Accounts opened", "opened"),
+    ("Share finished", "finished_share"),
+]
 
 
 def parse_day(value):
@@ -54,14 +126,28 @@ def unavailable(view):
     return wrapped
 
 
-def day_rows(day):
+DETAIL_SQL = """,
+               l.UPDATED AS updated, l.NARRATION AS narration, l.BENEFICIARY_BANK_CODE AS bank_code,
+               COALESCE(l.CBA_REFERENCE, p.cba_reference) AS cba_reference,
+               l.PROVIDER_REFERENCE AS provider_reference, p.session_id AS session_id,
+               COALESCE(l.PROVIDER, p.provider) AS provider, p.status AS payment_status,
+               p.response_code AS payment_code, p.requery_count AS requery_count,
+               l.CBA_RESPONSE_CODE AS cba_ok, l.CBA_MESSAGE AS cba_message,
+               l.PROVIDER_RESPONSE_CODE AS provider_code, l.PROVIDER_RESPONSE_MESSAGE AS provider_message,
+               l.REVERSAL_RESPONSE_MESSAGE AS reversal_message, l.REVERSAL_DATETIME AS reversed_at"""
+DETAIL_KEYS = ["narration", "bank_code", "cba_reference", "provider_reference", "session_id", "provider",
+               "payment_status", "payment_code", "requery_count", "cba_ok", "cba_message", "provider_code",
+               "provider_message", "reversal_message"]
+
+
+def day_rows(day, detail=False):
     start = datetime.combine(day, datetime.min.time())
     rows = fetch(f"""
         SELECT l.ID AS id, l.CREATED AS created, l.TRANSACTION_TYPE AS kind, l.AMOUNT AS amount,
                l.ACCOUNT_NUMBER AS account, l.BENEFICIARY_BANK_NAME AS bank, l.BENEFICIARY_NAME AS beneficiary,
                l.PAYMENT_REFERENCE AS reference, l.BENEFICIARY_ACCOUNT AS beneficiary_account,
                p.source_account_name AS sender,
-               {OUTCOME_SQL} AS outcome, {REASON_SQL} AS message
+               {OUTCOME_SQL} AS outcome, {REASON_SQL} AS message{DETAIL_SQL if detail else ""}
         FROM {LEGACY} l
         LEFT JOIN {PAYMENTS} p
                ON p.payment_reference = l.PAYMENT_REFERENCE COLLATE utf8mb4_unicode_ci
@@ -70,13 +156,15 @@ def day_rows(day):
     out = []
     for r in rows:
         reason, reason_kind = classify(r["message"]) if r["outcome"] == "FAILED" else (None, None)
-        out.append({
+        row = {
             "id": int(r["id"]),
             "at": iso(r["created"]),
             "kind": r["kind"],
             "amount": float(r["amount"] or 0),
             "account": r["account"],
             "beneficiary": r["beneficiary"],
+            "beneficiary_account": r["beneficiary_account"],
+            "sender": r["sender"],
             "bank": bank_names.canonical(r["bank"]) if r["bank"] else None,
             "reference": r["reference"],
             "outcome": r["outcome"],
@@ -84,7 +172,12 @@ def day_rows(day):
             "reason_kind": reason_kind,
             "words": words(" ".join(str(v) for v in (
                 r["reference"], r["account"], r["beneficiary"], r["beneficiary_account"], r["sender"]) if v)),
-        })
+        }
+        if detail:
+            row.update({k: r[k] for k in DETAIL_KEYS})
+            row["updated"] = iso(r["updated"])
+            row["reversed_at"] = iso(r["reversed_at"])
+        out.append(row)
     return out
 
 
@@ -123,10 +216,28 @@ def transactions(request):
         "hour": parse_int(g.get("hour")),
         "search": words(g.get("search") or ""),
     }
-    all_rows = day_rows(day)
+    all_rows = day_rows(day, detail=wants_excel(request))
     rows = sorted((r for r in all_rows if matches(r, q)), key=lambda r: (r["at"], r["id"]), reverse=True)
     rows = [{k: v for k, v in r.items() if k != "words"} for r in rows]
 
+    if wants_excel(request):
+        numbers = sorted({r["account"] for r in rows if r["account"]})
+        contacts = {}
+        for i in range(0, len(numbers), 1000):
+            for a in fetch(f"""
+                SELECT account_number, account_name, customer_phone_number AS phone, customer_email_address AS email
+                FROM {ACCOUNTS} WHERE account_number IN %(n)s
+            """, {"n": numbers[i:i + 1000]}):
+                contacts[a["account_number"]] = a
+        return excel_response(f"Transactions_{day}", TX_COLUMNS, [{
+            **r,
+            "type": KINDS.get(r["kind"], r["kind"]),
+            "status": OUTCOME_LABELS[r["outcome"]],
+            "side": SIDES.get(r["reason_kind"]),
+            "customer_name": r["sender"] or contacts.get(r["account"], {}).get("account_name"),
+            "customer_phone": contacts.get(r["account"], {}).get("phone"),
+            "customer_email": contacts.get(r["account"], {}).get("email"),
+        } for r in rows])
     summary = {s.lower(): 0 for s in STATUSES}
     reasons = {}
     for r in rows:
@@ -301,6 +412,8 @@ def onboarding(request):
         if search and search not in f"{name} {r['email']} {r['phone']}".lower():
             continue
         items.append(item)
+    if wants_excel(request):
+        return excel_response(f"Stuck_{phase}_{scope}", ONBOARDING_COLUMNS, items)
     return JsonResponse({"phase": phase, "label": PHASE_LABELS[phase], "scope": scope, **paged(items, request)})
 
 
@@ -367,24 +480,26 @@ def people(request):
     total = int(fetch(f"SELECT COUNT(*) AS n FROM {ONBOARDING} o WHERE {sql_where}", params)[0]["n"])
     pages = max(ceil(total / PAGE_SIZE), 1)
     page = min(max(parse_int(g.get("page"), 1), 1), pages)
+    download = wants_excel(request)
+    limit, offset = (MAX_ROWS, 0) if download else (PAGE_SIZE, (page - 1) * PAGE_SIZE)
     rows = fetch(f"""
         SELECT o.ID AS id, o.FIRSTNAME AS first, o.LASTNAME AS last, o.EMAIL AS email, o.PHONE_NUMBER AS phone,
                o.DATE_CREATED AS started, o.ACCOUNT_OPENED_DATE AS opened, o.ONBOARDING_PHASE AS phase
         FROM {ONBOARDING} o
         WHERE {sql_where}
         ORDER BY {column} DESC, o.ID DESC
-        LIMIT {PAGE_SIZE} OFFSET {(page - 1) * PAGE_SIZE}
+        LIMIT {limit} OFFSET {offset}
     """, params)
 
     emails = sorted({r["email"].strip().lower() for r in rows if r["email"]})
     found = {}
-    if emails:
+    for i in range(0, len(emails), 1000):
         for a in fetch(f"""
             SELECT LOWER(TRIM(customer_email_address)) AS email, account_number, status
             FROM {ACCOUNTS}
             WHERE LOWER(TRIM(customer_email_address)) IN %(emails)s
             ORDER BY created_at
-        """, {"emails": emails}):
+        """, {"emails": emails[i:i + 1000]}):
             found[a["email"]] = a
 
     items = []
@@ -406,6 +521,10 @@ def people(request):
             "stage": stage_label(r["phase"], r["opened"]),
             "done": bool(r["opened"]),
         })
+    if download:
+        span = "All-accounts" if all_time else f"{day}" + (f"_to_{until}" if until != day else "")
+        what = "Sign-ups" if mode == "signups" else "Accounts-opened"
+        return excel_response(f"{what}_{span}", PEOPLE_COLUMNS, items)
     return JsonResponse({
         "mode": mode,
         "date": "all" if all_time else day.isoformat(),
@@ -445,26 +564,31 @@ def money_in(request):
     total = int(summary["n"])
     pages = max(ceil(total / PAGE_SIZE), 1)
     page = min(max(parse_int(g.get("page"), 1), 1), pages)
-    rows = fetch(f"{base} ORDER BY at DESC LIMIT {PAGE_SIZE} OFFSET {(page - 1) * PAGE_SIZE}", params)
+    download = wants_excel(request)
+    limit, offset = (MAX_ROWS, 0) if download else (PAGE_SIZE, (page - 1) * PAGE_SIZE)
+    rows = fetch(f"{base} ORDER BY at DESC LIMIT {limit} OFFSET {offset}", params)
     numbers = sorted({r["account"] for r in rows if r["account"]})
     names = {}
     if numbers:
         names = {a["account_number"]: a["account_name"] for a in fetch(
             f"SELECT account_number, account_name FROM {ACCOUNTS} WHERE account_number IN %(n)s", {"n": numbers})}
+    items = [{
+        "ref": r["provider_ref"],
+        "at": utc_to_lagos(r["at"]),
+        "account": r["account"],
+        "name": names.get(r["account"]),
+        "amount": float(r["amount"] or 0),
+        "narration": r["narration"],
+    } for r in rows]
+    if download:
+        return excel_response(f"Money-in_{day}", MONEY_IN_COLUMNS, items)
     return JsonResponse({
         "date": day.isoformat(),
         "total": total,
         "value": float(summary["value"]),
         "page": page,
         "pages": pages,
-        "items": [{
-            "ref": r["provider_ref"],
-            "at": utc_to_lagos(r["at"]),
-            "account": r["account"],
-            "name": names.get(r["account"]),
-            "amount": float(r["amount"] or 0),
-            "narration": r["narration"],
-        } for r in rows],
+        "items": items,
     })
 
 
@@ -531,4 +655,7 @@ def build_signup_history(today, by):
 @unavailable
 def signup_history(request):
     by = request.GET.get("by") if request.GET.get("by") in HISTORY else "day"
-    return JsonResponse({"by": by, "items": build_signup_history(lagos_now().date(), by)})
+    items = build_signup_history(lagos_now().date(), by)
+    if wants_excel(request):
+        return excel_response(f"Sign-up-history_by_{by}", HISTORY_COLUMNS, items)
+    return JsonResponse({"by": by, "items": items})

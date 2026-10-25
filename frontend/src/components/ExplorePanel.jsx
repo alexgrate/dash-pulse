@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Download,
   Loader2,
   RotateCcw,
   Search,
@@ -248,6 +249,19 @@ function Loading({ error }) {
   )
 }
 
+function DownloadButton({ href }) {
+  return (
+    <a
+      href={href}
+      download
+      className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-2 text-sm text-muted hover:text-slate-100"
+    >
+      <Download className="size-4" />
+      Excel
+    </a>
+  )
+}
+
 function ListView({ filters, onChange, onOpen }) {
   const f = { date: todayIso(), page: 1, ...filters }
   const { data, loading, error } = useApi(`/api/explore/transactions?${query(f)}`)
@@ -277,6 +291,7 @@ function ListView({ filters, onChange, onOpen }) {
           onSearch={(search) => set({ search })}
           placeholder="Reference, account number or name"
         />
+        <DownloadButton href={`/api/explore/transactions?${query({ ...f, page: null, format: 'xlsx' })}`} />
       </div>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
@@ -641,6 +656,9 @@ function PeopleView({ frame, onChange, onOpen }) {
           onSearch={(search) => set({ search })}
           placeholder="Name, account number, email or phone"
         />
+        <DownloadButton
+          href={`/api/explore/people?${query({ mode: f.mode, date: f.date, until: f.until, stage: f.stage, search: f.search, format: 'xlsx' })}`}
+        />
       </div>
 
       {!data ? (
@@ -748,6 +766,7 @@ function MoneyInView({ frame, onChange, onOpen }) {
           Day after →
         </button>
         <SearchBox value={f.search} onSearch={(search) => set({ search })} placeholder="Account number or narration" />
+        <DownloadButton href={`/api/explore/money-in?${query({ date: f.date, search: f.search, format: 'xlsx' })}`} />
       </div>
       {!data ? (
         <Loading error={error} />
@@ -842,6 +861,7 @@ function SignupHistoryView({ frame, onChange, onOpen }) {
             {label}
           </button>
         ))}
+        <DownloadButton href={`/api/explore/signup-history?by=${by}&format=xlsx`} />
       </div>
       {!data ? (
         <Loading error={error} />
@@ -942,6 +962,9 @@ function OnboardingView({ frame, onChange }) {
           value={f.search}
           onSearch={(search) => onChange({ search, page: 1 })}
           placeholder="Name, email or phone"
+        />
+        <DownloadButton
+          href={`/api/explore/onboarding?${query({ phase: f.phase, scope: f.scope, search: f.search, format: 'xlsx' })}`}
         />
       </div>
       {!data ? (

@@ -2,3 +2,5 @@
 .env
 discovery/
 __pycache__/
+
+Dash-Pulse-*.pdf

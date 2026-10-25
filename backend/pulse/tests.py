@@ -420,6 +420,89 @@ class ExploreAccessTests(TestCase):
         self.assertEqual((body["total"], body["value"]), (1, 5000.0))
         self.assertEqual((body["items"][0]["name"], body["items"][0]["at"]), ("ADA BELLO", "2026-10-01T09:00:00"))
 
+    def test_money_in_download_is_excel(self):
+        from datetime import datetime
+        from io import BytesIO
+
+        from django.test import RequestFactory
+        from openpyxl import load_workbook
+
+        from . import explore
+
+        self.user.groups.add(self.group)
+        request = RequestFactory().get("/api/explore/money-in?date=2026-10-01&format=xlsx")
+        request.user = self.user
+        rows = [{"provider_ref": "r1", "at": datetime(2026, 10, 1, 8, 0), "account": "2000010005", "amount": 5000,
+                 "narration": "Inward transfer"}]
+        side = [[{"n": 1, "value": 5000}], rows, [{"account_number": "2000010005", "account_name": "ADA BELLO"}]]
+        with patch("pulse.explore.fetch", side_effect=side):
+            response = explore.money_in(request)
+        self.assertEqual(response["Content-Type"], "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        self.assertIn("Money-in_2026-10-01.xlsx", response["Content-Disposition"])
+        ws = load_workbook(BytesIO(response.content)).active
+        self.assertEqual([c.value for c in ws[1]][:3], ["Time", "Account number", "Account name"])
+        self.assertEqual([c.value for c in ws[2]][:3], [datetime(2026, 10, 1, 9, 0), "2000010005", "ADA BELLO"])
+
+    def test_transactions_download_has_troubleshooting_details(self):
+        from datetime import datetime
+        from io import BytesIO
+
+        from django.test import RequestFactory
+        from openpyxl import load_workbook
+
+        from . import explore
+
+        self.user.groups.add(self.group)
+        row = {"id": 7, "created": datetime(2026, 10, 25, 23, 28), "kind": "INTER", "amount": 19150, "account": "2000054237",
+               "bank": "PALMPAY", "beneficiary": "Bisi Okafor", "reference": "DMFB1", "beneficiary_account": "8012345678",
+               "sender": None, "outcome": "FAILED", "message": "Transfer limit exceeded",
+               "updated": datetime(2026, 10, 25, 23, 28, 5), "narration": "Rent", "bank_code": "100033",
+               "cba_reference": "CBA1", "provider_reference": "PR1", "session_id": "0908", "provider": "NCUBE",
+               "payment_status": None, "payment_code": "61", "requery_count": 0, "cba_ok": "false",
+               "cba_message": None, "provider_code": "61", "provider_message": "Transfer limit exceeded",
+               "reversal_message": None, "reversed_at": None}
+        contacts = [{"account_number": "2000054237", "account_name": "ADA BELLO", "phone": "2348012345678",
+                     "email": "ada@x.com"}]
+        request = RequestFactory().get("/api/explore/transactions?date=2026-10-25&status=FAILED&format=xlsx")
+        request.user = self.user
+        with patch("pulse.explore.fetch", side_effect=[[row], contacts]):
+            response = explore.transactions(request)
+        ws = load_workbook(BytesIO(response.content)).active
+        got = {ws.cell(row=1, column=c).value: ws.cell(row=2, column=c).value for c in range(1, ws.max_column + 1)}
+        self.assertEqual(ws.max_row, 2)
+        self.assertEqual((got["Status"], got["Failure reason"], got["Who caused it"]),
+                         ("Failed", "Transfer limit exceeded", "Customer"))
+        self.assertEqual((got["Customer name"], got["Customer phone"], got["Customer email"]),
+                         ("ADA BELLO", "2348012345678", "ada@x.com"))
+        self.assertEqual((got["Beneficiary account"], got["Bank code"], got["NIP session ID"]),
+                         ("8012345678", "100033", "0908"))
+        self.assertEqual(got["Last updated"], datetime(2026, 10, 25, 23, 28, 5))
+
+    def test_people_download_has_every_row(self):
+        from datetime import datetime
+        from io import BytesIO
+
+        from django.test import RequestFactory
+        from openpyxl import load_workbook
+
+        from . import explore
+
+        self.user.groups.add(self.group)
+        rows = [
+            {"id": 1, "first": "Ada", "last": "Bello", "email": "ada@x.com", "phone": "080", "phase": "ACCOUNT_CREATED",
+             "started": datetime(2026, 10, 1, 9, 0), "opened": datetime(2026, 10, 1, 9, 6)},
+            {"id": 2, "first": "Musa", "last": "Sani", "email": "musa@x.com", "phone": "081", "phase": "BVN_VALIDATION",
+             "started": datetime(2026, 10, 1, 9, 5), "opened": None},
+        ]
+        request = RequestFactory().get("/api/explore/people?mode=signups&date=2026-10-01&format=xlsx")
+        request.user = self.user
+        with patch("pulse.explore.fetch", side_effect=[[{"n": 2}], rows, []]):
+            response = explore.people(request)
+        self.assertIn("Sign-ups_2026-10-01.xlsx", response["Content-Disposition"])
+        ws = load_workbook(BytesIO(response.content)).active
+        self.assertEqual(ws.max_row, 3)
+        self.assertEqual([ws.cell(row=r, column=1).value for r in (2, 3)], ["Ada Bello", "Musa Sani"])
+
     def test_admin_alone_cannot_explore(self):
         self.user.is_staff = self.user.is_superuser = True
         self.user.save()
