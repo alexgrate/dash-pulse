@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 function useHold(active) {
   useEffect(() => {
@@ -10,19 +11,33 @@ function useHold(active) {
 
 export default function ChartHover({ count, render, markers, onPick, className = '', children }) {
   const ref = useRef(null)
+  const tip = useRef(null)
   const [index, setIndex] = useState(null)
   const [flip, setFlip] = useState(false)
+  const [box, setBox] = useState(null)
   useHold(index != null)
 
   function move(e) {
-    const box = ref.current.getBoundingClientRect()
-    const f = Math.min(Math.max((e.clientX - box.left) / box.width, 0), 1)
+    const rect = ref.current.getBoundingClientRect()
+    const f = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1)
     setIndex(Math.round(f * (count - 1)))
     setFlip(e.clientX > window.innerWidth / 2)
+    setBox({ left: rect.left, top: rect.top, width: rect.width })
   }
 
   const f = index == null ? 0 : index / Math.max(count - 1, 1)
   const content = index == null ? null : render(index)
+
+  useLayoutEffect(() => {
+    const el = tip.current
+    if (!el || !box) return
+    const gap = 8
+    el.style.top = `${box.top + gap}px`
+    const r = el.getBoundingClientRect()
+    if (r.bottom > window.innerHeight - gap) {
+      el.style.top = `${Math.max(gap, window.innerHeight - r.height - gap)}px`
+    }
+  })
 
   return (
     <div
@@ -45,17 +60,22 @@ export default function ChartHover({ count, render, markers, onPick, className =
               />
             ),
           )}
-          {content && (
-            <div
-              className="pointer-events-none absolute top-2 z-30 w-max max-w-[min(360px,80vw)] rounded-2xl border border-white/10 bg-[#0b0f1a]/95 px-4 py-3 text-[clamp(12px,0.85vw,16px)] shadow-2xl backdrop-blur-xl"
-              style={{
-                left: `${f * 100}%`,
-                transform: flip ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)',
-              }}
-            >
-              {content}
-            </div>
-          )}
+          {content &&
+            box &&
+            createPortal(
+              <div
+                ref={tip}
+                className="pointer-events-none fixed z-[100] w-max max-w-[min(360px,80vw)] rounded-2xl border border-white/10 bg-[#0b0f1a] px-4 py-3 text-[clamp(12px,0.85vw,16px)] shadow-2xl"
+                style={{
+                  left: `${box.left + f * box.width}px`,
+                  top: `${box.top + 8}px`,
+                  transform: flip ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)',
+                }}
+              >
+                {content}
+              </div>,
+              document.body,
+            )}
         </>
       )}
     </div>
@@ -70,7 +90,7 @@ export function TipRow({ label, value, color }) {
   return (
     <div className="mt-1 flex items-center justify-between gap-6">
       <span className="flex items-center gap-2 text-muted">
-        {color && <span className="size-2 rounded-full" style={{ background: color }} />}
+        <span className="size-2 shrink-0 rounded-full" style={{ background: color ?? 'transparent' }} />
         {label}
       </span>
       <span className="tabular text-slate-100">{value}</span>

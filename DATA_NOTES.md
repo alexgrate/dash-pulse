@@ -118,7 +118,9 @@ Money in comes from `dashmfb-cba-mcs`.webhook_events, the notices NCUBE sends wh
 
 ## Failed-transaction emails (pulse/failure_mail.py)
 
-Uses the same FAILED rule as everywhere else. Looks back 2 hours each minute, skips IDs already in `FailureNotice`, includes every failure reason, and sends one email per check. A failure is only recorded as sent after Graph accepts the email, so a failed send is retried on the next check. Records older than 7 days are pruned.
+Uses the same FAILED rule as everywhere else. Looks back 2 hours each minute, skips IDs already in `FailureNotice`, includes every failure reason except insufficient funds, and sends one email per check. A failure is only recorded as sent after Graph accepts the email, so a failed send is retried on the next check. Records older than 7 days are pruned.
+
+Insufficient funds go out once an hour instead (`run_hourly`, same service, same `PULSE_FAILURE_EMAILS`): about 10 minutes after each Lagos clock hour ends, one email with a summary and an Excel sheet (the same 30 columns as the Explore transactions download). Each hour is recorded in `FailureDigest`, empty hours too, so restarts never resend or skip; it catches up the last 2 hours. An hour is only recorded after Graph accepts the email.
 
 ## Sign-ups tab (pulse/explore.py: build_signup_history)
 

@@ -66,7 +66,7 @@ function Summary({ label, note, period, onPick, delay }) {
       </div>
       <div className="tabular mt-1 text-[clamp(22px,2.2vw,46px)] leading-none font-semibold">{num(period.signups)}</div>
       <div className="mt-1 text-[clamp(10px,0.8vw,16px)] leading-snug text-muted">
-        started signing up · {num(period.finished)} of them have an account
+        started signing up · {num(period.finished)} now have an account
         {period.finished_share != null && <> ({pct(period.finished_share, 0)})</>}
       </div>
       <div className="mt-0.5 text-[clamp(10px,0.8vw,16px)] leading-snug text-good">
@@ -127,14 +127,14 @@ function History({ by, items, title, span, onPick, delay }) {
               </TipTitle>
               <TipRow label="Started signing up" value={num(p.signups)} color="var(--color-accent)" />
               <TipRow
-                label="Of those, have an account"
+                label="Now have an account"
                 value={`${num(p.finished)}${p.finished_share == null ? '' : ` (${pct(p.finished_share, 0)})`}`}
               />
-              <TipRow label="Of those, not finished" value={num(p.signups - p.finished)} />
+              <TipRow label="Still not finished" value={num(p.signups - p.finished)} />
               <TipRow label={`Accounts opened this ${PERIOD[by]}`} value={num(p.opened)} color="var(--color-good)" />
               <TipNote>
-                Accounts opened counts every account opened this {PERIOD[by]}, including people who started earlier, so
-                it can be higher than “have an account”.{onPick ? ' Click to see the people.' : ''}
+                “Accounts opened this {PERIOD[by]}” also includes people who started signing up earlier, so it can be
+                higher than “Now have an account”.{onPick ? ' Click to see the people.' : ''}
               </TipNote>
             </>
           )

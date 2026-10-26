@@ -15,7 +15,9 @@ export default function Delta({ today, yesterday, invert = false, label = 'vs th
     <span className="inline-flex items-center gap-2 text-[clamp(12px,0.95vw,20px)]">
       <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-medium ${tone}`}>
         <Icon className="size-[1.1em]" strokeWidth={2.5} />
-        <span className="tabular">{Math.abs(c * 100).toFixed(1)}%</span>
+        <span className="tabular">
+          {c >= 9 ? `${Math.round(today / yesterday).toLocaleString('en-GB')}×` : `${Math.abs(c * 100).toFixed(1)}%`}
+        </span>
       </span>
       <span className="text-muted">{label}</span>
     </span>

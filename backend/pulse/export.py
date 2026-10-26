@@ -28,7 +28,7 @@ def cell_value(value):
     return value
 
 
-def excel_response(filename, columns, rows):
+def excel_bytes(columns, rows):
     wb = Workbook()
     ws = wb.active
     ws.title = "Data"
@@ -45,6 +45,10 @@ def excel_response(filename, columns, rows):
     ws.freeze_panes = "A2"
     buf = BytesIO()
     wb.save(buf)
-    response = HttpResponse(buf.getvalue(), content_type=XLSX)
+    return buf.getvalue()
+
+
+def excel_response(filename, columns, rows):
+    response = HttpResponse(excel_bytes(columns, rows), content_type=XLSX)
     response["Content-Disposition"] = f'attachment; filename="{filename}.xlsx"'
     return response

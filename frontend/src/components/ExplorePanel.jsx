@@ -871,7 +871,7 @@ function SignupHistoryView({ frame, onChange, onOpen }) {
             {[
               ['Started signing up', num(totals.signups), 'text-slate-100'],
               [
-                'Of those, have an account',
+                'Now have an account',
                 `${num(totals.finished)}${totals.signups ? ` (${pct(totals.finished / totals.signups, 0)})` : ''}`,
                 'text-accent',
               ],
@@ -886,9 +886,8 @@ function SignupHistoryView({ frame, onChange, onOpen }) {
             ))}
           </div>
           <div className="mt-2 text-xs text-muted">
-            “Have an account” follows the people who started in that period. “Accounts opened” counts every account
-            opened in the period, including people who started earlier, so it can be higher. Click a row to see the
-            people.
+            “Now have an account” counts the people who started signing up in that period. “Accounts opened” also
+            includes people who started earlier, so it can be higher. Click a row to see the people.
           </div>
           <div className="mt-3 overflow-hidden rounded-2xl border border-white/10">
             <div className={`${cols} bg-white/[0.03] px-4 py-2 text-[11px] tracking-[0.14em] text-muted uppercase`}>

@@ -4,13 +4,14 @@ import time
 from django.core.management.base import BaseCommand
 from django.db import close_old_connections
 
-from pulse.failure_mail import run_once
+from pulse.failure_mail import run_hourly, run_once
 
 logger = logging.getLogger("pulse.mail")
 
 
 class Command(BaseCommand):
-    help = "Email every new failed transaction to PULSE_FAILURE_EMAILS, checking once a minute."
+    help = ("Email new failed transactions to PULSE_FAILURE_EMAILS once a minute, and insufficient-funds failures "
+            "once an hour as an Excel sheet.")
 
     def add_arguments(self, parser):
         parser.add_argument("--once", action="store_true", help="check one time and exit")
@@ -23,6 +24,10 @@ class Command(BaseCommand):
                 run_once(dry_run=dry_run)
             except Exception:
                 logger.exception("Failure mail check failed")
+            try:
+                run_hourly(dry_run=dry_run)
+            except Exception:
+                logger.exception("Hourly insufficient-funds mail failed")
             finally:
                 close_old_connections()
             if once:

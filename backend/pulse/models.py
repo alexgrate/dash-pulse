@@ -18,6 +18,12 @@ class FailureNotice(models.Model):
     sent_at = models.DateTimeField(auto_now_add=True)
 
 
+class FailureDigest(models.Model):
+    hour = models.CharField(max_length=16, unique=True)
+    count = models.PositiveIntegerField(default=0)
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+
 class ReportLog(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     at = models.DateTimeField(auto_now_add=True)

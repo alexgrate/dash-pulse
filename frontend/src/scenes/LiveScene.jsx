@@ -209,7 +209,7 @@ function TodayPanel({ data }) {
           label="Stuck halfway"
           value={num(stuck)}
           tone="text-warn"
-          note={`Of the ${num(started)} who started signing up today, not finished yet.`}
+          note={`Out of ${num(started)} people who started signing up today, these have not finished yet.`}
         />
         <TodayFigure
           to={moneyInList()}

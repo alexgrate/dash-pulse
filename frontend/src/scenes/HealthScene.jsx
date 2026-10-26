@@ -81,7 +81,7 @@ export default function HealthScene({ data }) {
             className="mt-3 block text-[clamp(40px,4.6vw,100px)] leading-none font-semibold tracking-[-0.04em]"
           />
           <div className="mt-4 text-[clamp(12px,0.95vw,20px)] text-muted">
-            {num(liveness.failed)} low-score of {num(liveness.passed + liveness.failed)} liveness checks
+            {num(liveness.failed)} of {num(liveness.passed + liveness.failed)} face checks today scored too low to pass
           </div>
         </Panel>
       </div>
@@ -95,7 +95,7 @@ export default function HealthScene({ data }) {
             <Drill key={r.reason} to={list({ status: 'FAILED', reason: r.reason })} className="-mx-2 px-2 py-1">
               <div className="mb-2 flex items-end justify-between gap-4">
                 <span className="flex min-w-0 items-center gap-2">
-                  <span className="truncate text-[clamp(13px,1.05vw,22px)]">{r.reason}</span>
+                  <span className="line-clamp-2 text-[clamp(13px,1.05vw,22px)] leading-tight">{r.reason}</span>
                   <span
                     className="shrink-0 text-[clamp(9px,0.7vw,14px)] tracking-[0.15em] uppercase"
                     style={{ color: (REASON_KINDS[r.kind] ?? REASON_KINDS.other).color }}

@@ -265,6 +265,37 @@ class LoginTests(TestCase):
             self.post(self.client, "/api/auth/logout", {})
             self.assertEqual(self.client.get("/api/pulse").status_code, 401)
 
+    def test_username_is_not_case_sensitive(self):
+        get_user_model().objects.create_user("Maurice", password=self.password)
+        for typed in ("maurice", "MAURICE", "Maurice", " maurice "):
+            self.client.logout()
+            r = self.post(self.client, "/api/auth/login", {"username": typed, "password": self.password})
+            self.assertEqual((typed, r.status_code, r.json()["username"]), (typed, 200, "Maurice"))
+        r = self.post(self.client, "/api/auth/login", {"username": "OPS", "password": "nope"})
+        self.assertEqual(r.status_code, 401)
+
+    def test_lockout_counts_any_capitalisation(self):
+        for typed in ("ops", "OPS", "Ops", "oPs", "opS"):
+            self.post(self.client, "/api/auth/login", {"username": typed, "password": "nope"})
+        r = self.post(self.client, "/api/auth/login", {"username": "ops", "password": self.password})
+        self.assertEqual(r.status_code, 429)
+
+    def test_new_usernames_must_differ_by_more_than_capitals(self):
+        from .admin import EditForm, InviteForm
+
+        form = InviteForm(data={"username": "OPS", "email": "new@dash-mfb.com"})
+        self.assertFalse(form.is_valid())
+        self.assertIn("already exists", form.errors["username"][0])
+        self.assertTrue(InviteForm(data={"username": "ops2", "email": "new@dash-mfb.com"}).is_valid())
+        ops = get_user_model().objects.get(username="ops")
+        get_user_model().objects.create_user("ada", password=self.password)
+        same = EditForm(instance=ops, data={"username": "Ops", "date_joined": ops.date_joined, "last_login": ""})
+        same.is_valid()
+        self.assertNotIn("username", same.errors)
+        clash = EditForm(instance=ops, data={"username": "ADA", "date_joined": ops.date_joined})
+        clash.is_valid()
+        self.assertIn("username", clash.errors)
+
     def test_remember_keeps_session_longer(self):
         self.post(self.client, "/api/auth/login", {"username": "ops", "password": self.password, "remember": True})
         self.assertGreater(self.client.session.get_expiry_age(), 7 * 24 * 3600)
@@ -649,18 +680,75 @@ class FailureMailTests(TestCase):
         self.assertEqual(len(sent), 1)
         to, subject, html = sent[0]
         self.assertEqual(to, ["ops@dash-mfb.com", "md@dash-mfb.com"])
-        self.assertIn("3 failed transactions", subject)
-        self.assertIn("R3", html)
+        self.assertIn("2 failed transactions", subject)
         self.assertIn("R4", html)
         self.assertIn("S6", html)
-        self.assertIn("Insufficient funds", html)
+        self.assertNotIn("R3", html)
         self.assertNotIn("R1", html)
+        self.assertIn("1 failure for insufficient funds", html)
+        self.assertIn("hourly Excel sheet", html)
         self.assertIn("Ada &lt;b&gt;", html)
-        again = self.run_with(self.rows(1, 2, 3, 4, 6, 7))
+        again = self.run_with(self.rows(1, 2, 3, 4, 6, 8))
         self.assertEqual(len(again), 1)
-        self.assertIn("R7", again[0][2])
+        self.assertIn("R8", again[0][2])
         self.assertNotIn("R6", again[0][2])
-        self.assertEqual(self.run_with(self.rows(1, 2, 3, 4, 6, 7)), [])
+        self.assertEqual(self.run_with(self.rows(1, 2, 3, 4, 6, 8, 9)), [])
+
+    def hourly(self, rows_for, now, send):
+        from datetime import datetime
+
+        from .failure_mail import run_hourly
+
+        people = {"0011": {"account_name": "ADA BELLO", "phone": "2348012345678", "email": "ada@x.com"}}
+        with patch("pulse.failure_mail.failures_between", side_effect=lambda since, until: rows_for.get(since, [])), \
+             patch("pulse.failure_mail.contacts", return_value=people), \
+             patch("pulse.failure_mail.lagos_now", return_value=datetime(*now)), \
+             patch("pulse.failure_mail.mailer.send", side_effect=send), \
+             self.settings(PULSE_FAILURE_EMAILS=["ops@dash-mfb.com"]):
+            return run_hourly()
+
+    def test_insufficient_funds_go_out_once_an_hour_as_excel(self):
+        from datetime import datetime
+        from io import BytesIO
+
+        from openpyxl import load_workbook
+
+        from .models import FailureDigest
+
+        rows_for = {datetime(2026, 10, 12, 10): self.rows(1, 2, 3)}
+        sent = []
+        record = lambda to, s, h, att: sent.append((to, s, h, att))
+        self.assertEqual(self.hourly(rows_for, (2026, 10, 12, 11, 5), record), 0)
+        self.assertEqual(self.hourly(rows_for, (2026, 10, 12, 11, 12), record), 1)
+        self.assertEqual(self.hourly(rows_for, (2026, 10, 12, 11, 40), record), 0)
+        self.assertEqual(len(sent), 1)
+        to, subject, html, attachments = sent[0]
+        self.assertEqual(to, ["ops@dash-mfb.com"])
+        self.assertEqual(subject, "Insufficient funds · 12 Oct, 10:00–11:00 · 2 failed transactions")
+        self.assertIn("ADA BELLO", html)
+        name, content_type, content = attachments[0]
+        self.assertEqual(name, "Insufficient-funds_2026-10-12_1000.xlsx")
+        ws = load_workbook(BytesIO(content)).active
+        head = [c.value for c in ws[1]]
+        refs = [ws.cell(row=r, column=head.index("Payment reference") + 1).value for r in (2, 3)]
+        self.assertEqual((ws.max_row, refs), (3, ["R1", "R3"]))
+        self.assertEqual(ws.cell(row=2, column=head.index("Customer phone") + 1).value, "2348012345678")
+        self.assertEqual(dict(FailureDigest.objects.values_list("hour", "count")),
+                         {"2026-10-12 08:00": 0, "2026-10-12 09:00": 0, "2026-10-12 10:00": 2})
+
+    def test_hourly_sheet_is_retried_when_sending_fails(self):
+        from datetime import datetime
+
+        from . import mailer
+        from .models import FailureDigest
+
+        rows_for = {datetime(2026, 10, 12, 10): self.rows(1)}
+        with self.assertRaises(mailer.MailError):
+            self.hourly(rows_for, (2026, 10, 12, 11, 12), mailer.MailError("down"))
+        self.assertFalse(FailureDigest.objects.filter(hour="2026-10-12 10:00").exists())
+        sent = []
+        self.hourly(rows_for, (2026, 10, 12, 11, 13), lambda to, s, h, att: sent.append(s))
+        self.assertEqual(len(sent), 1)
 
     def test_failed_send_is_retried_next_time(self):
         from . import mailer

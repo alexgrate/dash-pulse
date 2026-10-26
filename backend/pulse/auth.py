@@ -2,7 +2,7 @@ import json
 import logging
 from functools import wraps
 
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.core.cache import cache
 from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -25,6 +25,11 @@ def client_ip(request):
 
 def failure_keys(ip, username):
     return f"auth:fail:{ip}:{username.lower()}", f"auth:fail-ip:{ip}"
+
+
+def stored_username(name):
+    found = list(get_user_model().objects.filter(username__iexact=name).values_list("username", flat=True)[:2])
+    return found[0] if len(found) == 1 else name
 
 
 def is_locked(ip, username):
@@ -112,7 +117,7 @@ def sign_in(request):
         logger.warning("Login blocked, too many failures: user=%s ip=%s", username, ip)
         return JsonResponse({"error": "Too many failed attempts. Try again in 15 minutes."}, status=429)
 
-    user = authenticate(request, username=username, password=password)
+    user = authenticate(request, username=stored_username(username), password=password)
     if user is None:
         record_failure(ip, username)
         logger.warning("Login failed: user=%s ip=%s", username, ip)

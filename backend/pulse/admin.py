@@ -43,6 +43,9 @@ class InviteForm(forms.ModelForm):
         self.fields["email"].required = True
         self.fields["email"].help_text = "The link to set a password is sent here."
 
+    def clean_username(self):
+        return unique_username(self.cleaned_data["username"])
+
     def clean_email(self):
         email = self.cleaned_data["email"].strip()
         if User.objects.filter(email__iexact=email).exists():
@@ -57,6 +60,14 @@ class InviteForm(forms.ModelForm):
         return user
 
 
+def unique_username(username, pk=None):
+    taken = User.objects.filter(username__iexact=username).exclude(pk=pk)
+    if taken.exists():
+        raise forms.ValidationError(
+            f"'{taken.first().username}' already exists. Usernames are not case-sensitive, so choose a different one.")
+    return username
+
+
 def explorer_group():
     return Group.objects.get_or_create(name=EXPLORER_GROUP)[0]
 
@@ -67,6 +78,9 @@ class EditForm(UserChangeForm):
         label="Explore access",
         help_text="Lets this person click into individual transactions and customers. Every view is logged.",
     )
+
+    def clean_username(self):
+        return unique_username(self.cleaned_data["username"], self.instance.pk)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
