@@ -52,8 +52,16 @@ def challenge(verifier):
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 
 
-def signing_key(jwks_uri, token):
-    return jwt.PyJWKClient(jwks_uri).get_signing_key_from_jwt(token).key
+def app_auth():
+    basic = base64.b64encode(f"{settings.OCI_CLIENT_ID}:{settings.OCI_CLIENT_SECRET}".encode()).decode()
+    return {"Authorization": f"Basic {basic}", "Content-Type": "application/x-www-form-urlencoded"}
+
+
+def signing_key(found, token):
+    access = http_json(found["token_endpoint"], {"grant_type": "client_credentials", "scope": "urn:opc:idm:__myscopes__"},
+                       app_auth())["access_token"]
+    client = jwt.PyJWKClient(found["jwks_uri"], headers={"Authorization": f"Bearer {access}"})
+    return client.get_signing_key_from_jwt(token).key
 
 
 def back_to_login(reason):
@@ -94,16 +102,15 @@ def start(request):
 
 def verified_claims(code, attempt):
     found = discovery()
-    basic = base64.b64encode(f"{settings.OCI_CLIENT_ID}:{settings.OCI_CLIENT_SECRET}".encode()).decode()
     tokens = http_json(found["token_endpoint"], {
         "grant_type": "authorization_code",
         "code": code,
         "redirect_uri": settings.OCI_REDIRECT_URI,
         "code_verifier": attempt["verifier"],
-    }, {"Authorization": f"Basic {basic}", "Content-Type": "application/x-www-form-urlencoded"})
+    }, app_auth())
     claims = jwt.decode(
         tokens["id_token"],
-        signing_key(found["jwks_uri"], tokens["id_token"]),
+        signing_key(found, tokens["id_token"]),
         algorithms=["RS256"],
         audience=settings.OCI_CLIENT_ID,
         issuer=found["issuer"],
