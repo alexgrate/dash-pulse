@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.test import Client, SimpleTestCase, TestCase
+from django.test import Client, SimpleTestCase, TestCase, override_settings
 
 from . import insights
 from .reasons import classify
@@ -230,6 +230,7 @@ class InsightTests(SimpleTestCase):
         self.assertEqual(key("GTBANK PLC"), key("Guaranty Trust Bank"))
 
 
+@override_settings(OCI_ENABLED=False, OCI_REQUIRED=False)
 class LoginTests(TestCase):
     password = "correct-horse-battery-staple"
 
@@ -1020,3 +1021,84 @@ class ReportRuleTests(SimpleTestCase):
         self.assertTrue(any("impossible amounts" in n for n in notes))
         self.assertTrue(any("not comparable" in n and "Account opening" in n for n in notes))
         self.assertTrue(any("NGN 600,000" in n and "not app customers" in n for n in notes))
+
+
+class OciTests(TestCase):
+    found = {
+        "issuer": "https://identity.oraclecloud.com/",
+        "authorization_endpoint": "https://idcs.example/oauth2/v1/authorize",
+        "token_endpoint": "https://idcs.example/oauth2/v1/token",
+        "userinfo_endpoint": "https://idcs.example/oauth2/v1/userinfo",
+        "jwks_uri": "https://idcs.example/admin/v1/SigningCert/jwk",
+    }
+
+    def setUp(self):
+        from cryptography.hazmat.primitives.asymmetric import rsa
+
+        cache.clear()
+        self.key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        get_user_model().objects.create_user("Maurice", email="maurice@dash-mfb.com", password="Pulse-Password-2026!")
+        get_user_model().objects.create_superuser("boss", email="boss@dash-mfb.com", password="Pulse-Password-2026!")
+        overrides = self.settings(OCI_ENABLED=True, OCI_REQUIRED=True, OCI_ISSUER_URL="https://idcs.example", OCI_CLIENT_ID="client-1",
+                                  OCI_CLIENT_SECRET="secret", OCI_REDIRECT_URI="http://testserver/oidc/callback/")
+        overrides.enable()
+        self.addCleanup(overrides.disable)
+
+    def start(self):
+        from urllib.parse import parse_qs, urlparse
+
+        with patch("pulse.oci.discovery", return_value=self.found):
+            r = self.client.get("/api/auth/oci")
+        return r, parse_qs(urlparse(r["Location"]).query)
+
+    def finish(self, query, email="maurice@dash-mfb.com", nonce=None, audience="client-1"):
+        import time
+
+        import jwt
+
+        now = int(time.time())
+        token = jwt.encode({"iss": self.found["issuer"], "aud": audience, "sub": email, "iat": now, "exp": now + 300,
+                            "nonce": nonce or query["nonce"][0]}, self.key, algorithm="RS256")
+        replies = [{"id_token": token, "access_token": "at"}, {"email": email}]
+        with patch("pulse.oci.discovery", return_value=self.found), \
+             patch("pulse.oci.http_json", side_effect=replies), \
+             patch("pulse.oci.signing_key", return_value=self.key.public_key()):
+            return self.client.get("/oidc/callback/", {"code": "c1", "state": query["state"][0]})
+
+    def signed_in(self):
+        return self.client.get("/api/auth/session").json()
+
+    def test_sign_in_with_dash_account(self):
+        self.assertTrue(self.signed_in()["sso"])
+        r, q = self.start()
+        self.assertTrue(r["Location"].startswith(self.found["authorization_endpoint"]))
+        self.assertEqual((q["client_id"][0], q["code_challenge_method"][0], q["redirect_uri"][0]),
+                         ("client-1", "S256", "http://testserver/oidc/callback/"))
+        self.assertEqual(self.finish(q)["Location"], "/")
+        session = self.signed_in()
+        self.assertEqual((session["authenticated"], session["username"]), (True, "Maurice"))
+
+    def test_tampered_or_unknown_sign_ins_are_turned_away(self):
+        r, q = self.start()
+        q["state"] = ["tampered"]
+        self.assertEqual(self.finish(q)["Location"], "/?sso_error=expired")
+        r, q = self.start()
+        self.assertEqual(self.finish(q, nonce="replayed")["Location"], "/?sso_error=failed")
+        r, q = self.start()
+        self.assertEqual(self.finish(q, audience="another-app")["Location"], "/?sso_error=failed")
+        r, q = self.start()
+        self.assertEqual(self.finish(q, email="stranger@dash-mfb.com")["Location"], "/?sso_error=no_access")
+        self.client.cookies.clear()
+        self.assertEqual(self.client.get("/oidc/callback/", {"code": "c1", "state": "x"})["Location"],
+                         "/?sso_error=expired")
+        self.assertFalse(self.signed_in()["authenticated"])
+
+    def test_password_login_is_only_for_superusers_when_oci_is_on(self):
+        def login(name):
+            return self.client.post("/api/auth/login", json.dumps({"username": name, "password": "Pulse-Password-2026!"}),
+                                    content_type="application/json")
+
+        self.assertEqual(login("maurice").status_code, 403)
+        self.assertEqual(login("boss").status_code, 200)
+        with self.settings(OCI_REQUIRED=False):
+            self.assertEqual(login("maurice").status_code, 200)

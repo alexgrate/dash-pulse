@@ -11,14 +11,21 @@ async function fetchSession() {
       username: s.username,
       isAdmin: Boolean(s.is_admin),
       canExplore: Boolean(s.can_explore),
+      sso: Boolean(s.sso),
     }
   } catch {
-    return { status: 'offline', username: null, isAdmin: false, canExplore: false }
+    return { status: 'offline', username: null, isAdmin: false, canExplore: false, sso: false }
   }
 }
 
 export function useSession() {
-  const [state, setState] = useState({ status: 'loading', username: null, isAdmin: false, canExplore: false })
+  const [state, setState] = useState({
+    status: 'loading',
+    username: null,
+    isAdmin: false,
+    canExplore: false,
+    sso: false,
+  })
 
   useEffect(() => {
     if (state.status !== 'loading' && state.status !== 'offline') return
@@ -35,7 +42,13 @@ export function useSession() {
 
   const signIn = useCallback(async (username, password, remember) => {
     const s = await api('/api/auth/login', { method: 'POST', body: { username, password, remember } })
-    setState({ status: 'in', username: s.username, isAdmin: Boolean(s.is_admin), canExplore: Boolean(s.can_explore) })
+    setState({
+      status: 'in',
+      username: s.username,
+      isAdmin: Boolean(s.is_admin),
+      canExplore: Boolean(s.can_explore),
+      sso: Boolean(s.sso),
+    })
   }, [])
 
   const signOut = useCallback(async () => {
@@ -43,7 +56,10 @@ export function useSession() {
     setState(await fetchSession())
   }, [])
 
-  const expired = useCallback(() => setState({ status: 'out', username: null, isAdmin: false, canExplore: false }), [])
+  const expired = useCallback(
+    () => setState((s) => ({ ...s, status: 'out', username: null, isAdmin: false, canExplore: false })),
+    [],
+  )
 
   return { ...state, signIn, signOut, expired }
 }

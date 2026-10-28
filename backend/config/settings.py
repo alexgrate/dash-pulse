@@ -199,6 +199,13 @@ MS_GRAPH_CLIENT_ID = os.environ.get("MS_GRAPH_CLIENT_ID", "")
 MS_GRAPH_CLIENT_SECRET = os.environ.get("MS_GRAPH_CLIENT_SECRET", "")
 MS_GRAPH_SENDER = os.environ.get("MS_GRAPH_SENDER", "")
 PULSE_PUBLIC_URL = os.environ.get("PULSE_PUBLIC_URL", "").rstrip("/")
+
+OCI_ISSUER_URL = os.environ.get("OCI_ISSUER_URL", "").rstrip("/")
+OCI_CLIENT_ID = os.environ.get("OCI_CLIENT_ID", "")
+OCI_CLIENT_SECRET = os.environ.get("OCI_CLIENT_SECRET", "")
+OCI_REDIRECT_URI = os.environ.get("OCI_REDIRECT_URI", "")
+OCI_ENABLED = all((OCI_ISSUER_URL, OCI_CLIENT_ID, OCI_CLIENT_SECRET, OCI_REDIRECT_URI))
+OCI_REQUIRED = OCI_ENABLED and os.environ.get("OCI_REQUIRED", "") == "1"
 PASSWORD_RESET_TIMEOUT = 24 * 60 * 60
 
 PULSE_FAILURE_EMAILS = [e.strip() for e in os.environ.get("PULSE_FAILURE_EMAILS", "").split(",") if e.strip()]

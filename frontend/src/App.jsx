@@ -75,7 +75,7 @@ export default function App() {
       {setupLink ? (
         <SetPasswordScreen link={setupLink} onDone={finishSetup} />
       ) : session.status === 'out' ? (
-        <LoginScreen onSignIn={session.signIn} notice={notice} />
+        <LoginScreen onSignIn={session.signIn} notice={notice} sso={session.sso} />
       ) : data ? (
         <>
           <ExploreContext.Provider value={explore}>

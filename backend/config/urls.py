@@ -17,10 +17,11 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
-from pulse import report_views
+from pulse import oci, report_views
 
 urlpatterns = [
     path("api/", include("pulse.urls")),
+    path("oidc/callback/", oci.callback),
     path("manage/reports/", admin.site.admin_view(report_views.reports), name="pulse-reports"),
     path("manage/", admin.site.urls),
 ]

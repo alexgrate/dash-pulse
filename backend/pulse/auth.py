@@ -2,6 +2,7 @@ import json
 import logging
 from functools import wraps
 
+from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.core.cache import cache
 from django.http import JsonResponse
@@ -54,6 +55,7 @@ def session_payload(request):
         "username": user.get_username() if signed_in else None,
         "is_admin": bool(signed_in and user.is_staff),
         "can_explore": can_explore(user),
+        "sso": settings.OCI_ENABLED,
     }
 
 
@@ -122,6 +124,10 @@ def sign_in(request):
         record_failure(ip, username)
         logger.warning("Login failed: user=%s ip=%s", username, ip)
         return JsonResponse({"error": "Incorrect username or password."}, status=401)
+
+    if settings.OCI_REQUIRED and not user.is_superuser:
+        logger.warning("Password login refused, OCI sign-in required: user=%s ip=%s", user.get_username(), ip)
+        return JsonResponse({"error": "Use “Sign in with your Dash account” instead."}, status=403)
 
     cache.delete(failure_keys(ip, username)[0])
     login(request, user)

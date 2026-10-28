@@ -1,9 +1,23 @@
-import { Activity, ArrowLeft, Eye, EyeOff, Loader2, Lock, Mail, ShieldCheck } from 'lucide-react'
+import { Activity, ArrowLeft, Eye, EyeOff, KeyRound, Loader2, Lock, Mail, ShieldCheck } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 
 const EASE = [0.16, 1, 0.3, 1]
+
+const SSO_ERRORS = {
+  no_access: 'Your Dash account is not set up for Dash Pulse. Ask an administrator to add you.',
+  refused: 'Sign-in was cancelled or refused by the Dash account service.',
+  expired: 'That sign-in attempt expired. Please try again.',
+  failed: 'Signing in with your Dash account did not work. Please try again.',
+  unavailable: 'The Dash account service cannot be reached right now. Try again shortly.',
+  not_configured: 'Signing in with a Dash account is not set up yet.',
+}
+
+function ssoErrorFromUrl() {
+  const code = new URLSearchParams(window.location.search).get('sso_error')
+  return code ? (SSO_ERRORS[code] ?? SSO_ERRORS.failed) : ''
+}
 
 export const FIELD =
   'mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-slate-100 outline-none focus:border-brand-soft/60 focus:ring-2 focus:ring-brand-soft/20'
@@ -43,19 +57,23 @@ export function ErrorBox({ children }) {
   )
 }
 
-export default function LoginScreen({ onSignIn, notice = '' }) {
+export default function LoginScreen({ onSignIn, notice = '', sso = false }) {
   const [forgot, setForgot] = useState(false)
   if (forgot) return <ForgotForm onBack={() => setForgot(false)} />
-  return <SignInForm onSignIn={onSignIn} notice={notice} onForgot={() => setForgot(true)} />
+  return <SignInForm onSignIn={onSignIn} notice={notice} sso={sso} onForgot={() => setForgot(true)} />
 }
 
-function SignInForm({ onSignIn, notice, onForgot }) {
+function SignInForm({ onSignIn, notice, sso, onForgot }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(false)
   const [reveal, setReveal] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(ssoErrorFromUrl)
+
+  useEffect(() => {
+    if (window.location.search.includes('sso_error')) window.history.replaceState(null, '', window.location.pathname)
+  }, [])
 
   async function submit(e) {
     e.preventDefault()
@@ -76,6 +94,20 @@ function SignInForm({ onSignIn, notice, onForgot }) {
     <AuthCard onSubmit={submit} subtitle="Sign in to view the operations dashboard">
       {notice && (
         <div className="mt-6 rounded-xl border border-good/30 bg-good/10 px-4 py-3 text-sm text-good">{notice}</div>
+      )}
+
+      {sso && (
+        <>
+          <a href="/api/auth/oci" className={PRIMARY}>
+            <KeyRound className="size-4" />
+            Sign in with your Dash account
+          </a>
+          <div className="mt-6 flex items-center gap-3 text-xs text-muted">
+            <span className="h-px flex-1 bg-white/10" />
+            or with your Pulse password
+            <span className="h-px flex-1 bg-white/10" />
+          </div>
+        </>
       )}
 
       <label className="mt-8 block text-sm text-muted" htmlFor="username">
