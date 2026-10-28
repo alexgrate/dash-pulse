@@ -1044,11 +1044,11 @@ class OciTests(TestCase):
         overrides.enable()
         self.addCleanup(overrides.disable)
 
-    def start(self):
+    def start(self, remember=False):
         from urllib.parse import parse_qs, urlparse
 
         with patch("pulse.oci.discovery", return_value=self.found):
-            r = self.client.get("/api/auth/oci")
+            r = self.client.get("/api/auth/oci", {"remember": "1"} if remember else {})
         return r, parse_qs(urlparse(r["Location"]).query)
 
     def finish(self, query, email="maurice@dash-mfb.com", nonce=None, audience="client-1"):
@@ -1077,6 +1077,12 @@ class OciTests(TestCase):
         self.assertEqual(self.finish(q)["Location"], "/")
         session = self.signed_in()
         self.assertEqual((session["authenticated"], session["username"]), (True, "Maurice"))
+        self.assertEqual(self.client.session.get_expiry_age(), 12 * 60 * 60)
+
+    def test_wall_screen_can_stay_signed_in_for_30_days(self):
+        r, q = self.start(remember=True)
+        self.finish(q)
+        self.assertEqual(self.client.session.get_expiry_age(), 30 * 24 * 60 * 60)
 
     def test_tampered_or_unknown_sign_ins_are_turned_away(self):
         r, q = self.start()

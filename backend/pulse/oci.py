@@ -15,7 +15,7 @@ from django.core.cache import cache
 from django.http import HttpResponseRedirect
 from django.views.decorators.http import require_GET
 
-from .auth import SESSION_SECONDS, client_ip
+from .auth import REMEMBER_SECONDS, SESSION_SECONDS, client_ip
 
 logger = logging.getLogger("pulse.auth")
 
@@ -83,6 +83,7 @@ def start(request):
         "state": secrets.token_urlsafe(32),
         "nonce": secrets.token_urlsafe(32),
         "verifier": secrets.token_urlsafe(64),
+        "remember": request.GET.get("remember") == "1",
     }
     params = urlencode({
         "client_id": settings.OCI_CLIENT_ID,
@@ -153,8 +154,9 @@ def callback(request):
         logger.warning("OCI sign-in has no Pulse user: email=%s ip=%s", claims.get("email"), client_ip(request))
         return back_to_login("no_access")
     login(request, user, backend="django.contrib.auth.backends.ModelBackend")
-    request.session.set_expiry(SESSION_SECONDS)
-    logger.info("OCI sign-in succeeded: user=%s ip=%s", user.get_username(), client_ip(request))
+    remember = attempt.get("remember") is True
+    request.session.set_expiry(REMEMBER_SECONDS if remember else SESSION_SECONDS)
+    logger.info("OCI sign-in succeeded: user=%s ip=%s remember=%s", user.get_username(), client_ip(request), remember)
     response = HttpResponseRedirect("/")
     response.delete_cookie(COOKIE)
     return response
