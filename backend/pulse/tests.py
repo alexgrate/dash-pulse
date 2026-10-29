@@ -535,6 +535,55 @@ class ExploreAccessTests(TestCase):
         self.assertEqual(ws.max_row, 3)
         self.assertEqual([ws.cell(row=r, column=1).value for r in (2, 3)], ["Ada Bello", "Musa Sani"])
 
+    def test_transactions_cover_a_date_range(self):
+        from datetime import datetime
+
+        from django.test import RequestFactory
+
+        from . import explore
+
+        cache.clear()
+        self.user.groups.add(self.group)
+        rows = [{"id": i, "created": datetime(2026, 10, d, 9, 0), "kind": "INTER", "amount": 100, "account": "0011",
+                 "bank": "OPAY", "beneficiary": "Ada", "reference": f"R{i}", "beneficiary_account": "8012",
+                 "sender": None, "outcome": "SUCCESS", "message": None} for i, d in ((1, 1), (2, 15))]
+
+        def call(query):
+            request = RequestFactory().get(f"/api/explore/transactions?{query}")
+            request.user = self.user
+            return explore.transactions(request)
+
+        with patch("pulse.explore.fetch", return_value=rows) as fetch:
+            body = json.loads(call("date=2026-10-01&until=2026-10-15").content)
+            call("date=2026-10-01&until=2026-10-15&page=2")
+        params = fetch.call_args.args[1]
+        self.assertEqual((params["start"], params["end"]), (datetime(2026, 10, 1), datetime(2026, 10, 16)))
+        self.assertEqual(fetch.call_count, 1)
+        self.assertEqual((body["until"], body["total"], body["summary"]["success"]), ("2026-10-15", 2, 2))
+        self.assertEqual([i["id"] for i in body["items"]], [2, 1])
+
+        too_long = call("date=2026-10-01&until=2026-11-01")
+        self.assertEqual((too_long.status_code, json.loads(too_long.content)["max_days"]), (400, 31))
+
+        with patch("pulse.explore.fetch", side_effect=[[{**rows[0], **dict.fromkeys(
+                explore.DETAIL_KEYS + ["updated", "reversed_at"])}], []]):
+            response = call("date=2026-10-01&until=2026-10-15&format=xlsx")
+        self.assertIn("Transactions_2026-10-01_to_2026-10-15.xlsx", response["Content-Disposition"])
+
+    def test_downloads_over_the_excel_limit_are_refused_clearly(self):
+        from django.test import RequestFactory
+
+        from . import explore
+
+        self.user.groups.add(self.group)
+        request = RequestFactory().get("/api/explore/money-in?date=2026-10-01&until=2026-10-31&format=xlsx")
+        request.user = self.user
+        with patch("pulse.explore.fetch", return_value=[{"n": 60000, "value": 0}]) as fetch:
+            response = explore.money_in(request)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("60,000 rows", response.content.decode())
+        self.assertEqual(fetch.call_count, 1)
+
     def test_admin_alone_cannot_explore(self):
         self.user.is_staff = self.user.is_superuser = True
         self.user.save()
@@ -780,16 +829,17 @@ class SignupHistoryTests(SimpleTestCase):
         self.assertEqual((len(months), months[0], months[-1]), (12, date(2026, 10, 1), date(2025, 11, 1)))
         self.assertEqual(len(set(history_periods(wed, "day"))), 30)
 
-    def test_range_end_is_clamped(self):
+    def test_date_range_is_read_and_limited(self):
         from datetime import date
 
-        from .explore import parse_range_end
+        from .explore import RangeTooLong, parse_span
 
         start = date(2026, 10, 1)
-        self.assertEqual(parse_range_end(start, None), start)
-        self.assertEqual(parse_range_end(start, "2026-09-01"), start)
-        self.assertEqual(parse_range_end(start, "2026-10-07"), date(2026, 10, 7))
-        self.assertEqual(parse_range_end(start, "2030-01-01"), date(2027, 11, 5))
+        self.assertEqual(parse_span({"date": "2026-10-01"}, 31), (start, start))
+        self.assertEqual(parse_span({"date": "2026-10-01", "until": "2026-09-01"}, 31), (start, start))
+        self.assertEqual(parse_span({"date": "2026-10-01", "until": "2026-10-31"}, 31), (start, date(2026, 10, 31)))
+        with self.assertRaises(RangeTooLong):
+            parse_span({"date": "2026-10-01", "until": "2026-11-01"}, 31)
 
 
 def fake_report_period(start, end):

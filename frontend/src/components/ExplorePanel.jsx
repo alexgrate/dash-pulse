@@ -55,6 +55,15 @@ const when = (iso) =>
       })
     : '—'
 const todayIso = () => new Date(Date.now() + 3600e3).toISOString().slice(0, 10)
+const stamp = (iso, ranged) => (ranged ? when(iso) : time(iso))
+
+const EXCEL_ROWS = 50000
+const RANGE_DAYS = { list: 31, money: 31, people: 366 }
+
+const pill = (on) =>
+  `rounded-full px-3 py-1 text-xs ${on ? 'bg-brand text-white ring-1 ring-brand-soft/40' : 'bg-white/5 text-muted hover:text-slate-100'}`
+const STEP = 'rounded-lg border border-white/10 px-2.5 py-2 text-sm text-muted hover:text-slate-100 disabled:opacity-30'
+const DATE_INPUT = 'rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-slate-100 [color-scheme:dark]'
 
 function query(params) {
   const p = new URLSearchParams()
@@ -249,7 +258,18 @@ function Loading({ error }) {
   )
 }
 
-function DownloadButton({ href }) {
+function DownloadButton({ href, total = 0 }) {
+  if (total > EXCEL_ROWS) {
+    return (
+      <span
+        title={`More than ${num(EXCEL_ROWS)} rows. Pick a shorter range or add a filter to download.`}
+        className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-2 text-sm text-muted opacity-40"
+      >
+        <Download className="size-4" />
+        Excel
+      </span>
+    )
+  }
   return (
     <a
       href={href}
@@ -262,14 +282,140 @@ function DownloadButton({ href }) {
   )
 }
 
+function ExcelLimit({ total }) {
+  if (!(total > EXCEL_ROWS)) return null
+  return (
+    <div className="mt-2 text-xs text-warn">
+      {num(total)} rows is more than one Excel file can hold ({num(EXCEL_ROWS)}). Pick a shorter range or add a filter
+      to download.
+    </div>
+  )
+}
+
+const daysBetween = (from, to) => Math.round((new Date(`${to}T12:00:00Z`) - new Date(`${from}T12:00:00Z`)) / 864e5)
+
+const monthStart = (iso, offset = 0) => {
+  const d = new Date(`${iso.slice(0, 8)}01T12:00:00Z`)
+  d.setUTCMonth(d.getUTCMonth() + offset)
+  return d.toISOString().slice(0, 10)
+}
+const monthEnd = (iso) => shiftDay(monthStart(iso, 1), -1)
+
+function presets() {
+  const today = todayIso()
+  const first = `${today.slice(0, 8)}01`
+  const lastMonthEnd = shiftDay(first, -1)
+  return [
+    ['Today', today, null],
+    ['Yesterday', shiftDay(today, -1), null],
+    ['Last 7 days', shiftDay(today, -6), today],
+    ['This month', first, first === today ? null : today],
+    ['Last month', monthStart(lastMonthEnd), lastMonthEnd],
+  ]
+}
+
+function DateRange({ date, until, maxDays, onChange }) {
+  const [warning, setWarning] = useState('')
+  const today = todayIso()
+  const ranged = until != null
+  const end = until ?? date
+  const length = daysBetween(date, end) + 1
+
+  function pick(from, wanted) {
+    const to = wanted != null && wanted > today ? today : wanted
+    if (from > today) return
+    if (to != null && daysBetween(from, to) >= maxDays) {
+      setWarning(`Pick ${maxDays} days or fewer for this list.`)
+      return
+    }
+    setWarning('')
+    onChange({ date: from, until: to ?? undefined })
+  }
+
+  function move(direction) {
+    if (!ranged) return pick(shiftDay(date, direction), null)
+    const wholeMonth =
+      date === monthStart(date) && (end === monthEnd(date) || (end === today && date === monthStart(today)))
+    if (wholeMonth) {
+      const from = monthStart(date, direction)
+      return pick(from, monthEnd(from))
+    }
+    const to = shiftDay(end, direction * length)
+    pick(shiftDay(date, direction * length), to > today ? today : to)
+  }
+
+  return (
+    <div className="mt-4">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {presets().map(([label, from, to]) => (
+          <button
+            key={label}
+            type="button"
+            className={pill(date === from && (until ?? null) === to)}
+            onClick={() => pick(from, to)}
+          >
+            {label}
+          </button>
+        ))}
+        <button
+          type="button"
+          className="ml-auto text-xs text-brand-soft hover:text-slate-100"
+          onClick={() => pick(date, ranged ? null : date)}
+        >
+          {ranged ? 'Pick one day' : 'Pick a date range'}
+        </button>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button type="button" className={STEP} onClick={() => move(-1)}>
+          ← {ranged ? 'Earlier' : 'Day before'}
+        </button>
+        <input
+          type="date"
+          aria-label={ranged ? 'From' : 'Day'}
+          value={date}
+          max={today}
+          onChange={(e) =>
+            e.target.value && pick(e.target.value, ranged ? (e.target.value > end ? e.target.value : end) : null)
+          }
+          className={DATE_INPUT}
+        />
+        {ranged && (
+          <>
+            <span className="text-muted">to</span>
+            <input
+              type="date"
+              aria-label="To"
+              value={end}
+              min={date}
+              max={[today, shiftDay(date, maxDays - 1)].sort()[0]}
+              onChange={(e) => e.target.value && pick(e.target.value < date ? e.target.value : date, e.target.value)}
+              className={DATE_INPUT}
+            />
+          </>
+        )}
+        <button type="button" className={STEP} disabled={end >= today} onClick={() => move(1)}>
+          {ranged ? 'Later' : 'Day after'} →
+        </button>
+      </div>
+      {warning && <div className="mt-2 text-xs text-warn">{warning}</div>}
+    </div>
+  )
+}
+
 function ListView({ filters, onChange, onOpen }) {
   const f = { date: todayIso(), page: 1, ...filters }
   const { data, loading, error } = useApi(`/api/explore/transactions?${query(f)}`)
   const set = (patch) => onChange({ ...f, page: 1, ...patch })
+  const ranged = f.until != null
 
   const title = [
     f.status ? OUTCOME[f.status]?.label : 'All',
     'transactions',
+    ranged && f.until !== f.date
+      ? `${shortDay(f.date)} – ${shortDay(f.until)}`
+      : f.date === todayIso()
+        ? 'today'
+        : `on ${dayName(f.date)}`,
     f.hour != null
       ? `· ${String(f.hour).padStart(2, '0')}:00–${String((Number(f.hour) + 1) % 24).padStart(2, '0')}:00`
       : '',
@@ -278,20 +424,17 @@ function ListView({ filters, onChange, onOpen }) {
   return (
     <div>
       <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <input
-          type="date"
-          value={f.date}
-          max={todayIso()}
-          onChange={(e) => set({ date: e.target.value })}
-          className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-slate-100 [color-scheme:dark]"
-        />
+      <DateRange date={f.date} until={f.until} maxDays={RANGE_DAYS.list} onChange={set} />
+      <div className="mt-3 flex flex-wrap items-center gap-3">
         <SearchBox
           value={f.search}
           onSearch={(search) => set({ search })}
           placeholder="Reference, account number or name"
         />
-        <DownloadButton href={`/api/explore/transactions?${query({ ...f, page: null, format: 'xlsx' })}`} />
+        <DownloadButton
+          href={`/api/explore/transactions?${query({ ...f, page: null, format: 'xlsx' })}`}
+          total={data?.total}
+        />
       </div>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
@@ -347,6 +490,7 @@ function ListView({ filters, onChange, onOpen }) {
           <div className="mt-2 text-xs text-muted">
             Money moved by the successful ones: <span className="text-slate-200">{naira(data.summary.value)}</span>
           </div>
+          <ExcelLimit total={data.total} />
 
           {!f.reason && data.reasons.length > 0 && (
             <div className="mt-4">
@@ -373,9 +517,9 @@ function ListView({ filters, onChange, onOpen }) {
                 key={t.id}
                 type="button"
                 onClick={() => onOpen(t.id)}
-                className="grid w-full grid-cols-[70px_1fr_auto] items-center gap-4 px-4 py-3 text-left hover:bg-white/[0.04]"
+                className={`grid w-full ${ranged ? 'grid-cols-[112px_1fr_auto]' : 'grid-cols-[70px_1fr_auto]'} items-center gap-4 px-4 py-3 text-left hover:bg-white/[0.04]`}
               >
-                <span className="tabular text-xs text-muted">{time(t.at)}</span>
+                <span className="tabular text-xs text-muted">{stamp(t.at, ranged)}</span>
                 <span className="min-w-0">
                   <span className="block truncate text-slate-100">
                     {kindLabel(t.kind)}
@@ -571,10 +715,6 @@ function PeopleView({ frame, onChange, onOpen }) {
         : f.stage === 'not_opened'
           ? `of the people who started signing up ${scope} have not finished yet.`
           : `people started signing up ${scope}.`
-  const pill = (on) =>
-    `rounded-full px-3 py-1 text-xs ${on ? 'bg-brand text-white ring-1 ring-brand-soft/40' : 'bg-white/5 text-muted hover:text-slate-100'}`
-  const step =
-    'rounded-lg border border-white/10 px-2.5 py-2 text-sm text-muted hover:text-slate-100 disabled:opacity-30'
 
   return (
     <div>
@@ -608,7 +748,7 @@ function PeopleView({ frame, onChange, onOpen }) {
               className={pill(!allTime)}
               onClick={() => set({ date: allTime ? todayIso() : f.date, until: allTime ? undefined : f.until })}
             >
-              By day
+              By date
             </button>
             <button type="button" className={pill(allTime)} onClick={() => set({ date: 'all' })}>
               All time
@@ -628,29 +768,9 @@ function PeopleView({ frame, onChange, onOpen }) {
           ))}
       </div>
 
+      {!allTime && <DateRange date={f.date} until={f.until} maxDays={RANGE_DAYS.people} onChange={set} />}
+
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {!allTime && !ranged && (
-          <>
-            <button type="button" className={step} onClick={() => set({ date: shiftDay(f.date, -1) })}>
-              ← Day before
-            </button>
-            <input
-              type="date"
-              value={f.date}
-              max={todayIso()}
-              onChange={(e) => e.target.value && set({ date: e.target.value })}
-              className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-slate-100 [color-scheme:dark]"
-            />
-            <button
-              type="button"
-              className={step}
-              disabled={f.date >= todayIso()}
-              onClick={() => set({ date: shiftDay(f.date, 1) })}
-            >
-              Day after →
-            </button>
-          </>
-        )}
         <SearchBox
           value={f.search}
           onSearch={(search) => set({ search })}
@@ -658,6 +778,7 @@ function PeopleView({ frame, onChange, onOpen }) {
         />
         <DownloadButton
           href={`/api/explore/people?${query({ mode: f.mode, date: f.date, until: f.until, stage: f.stage, search: f.search, format: 'xlsx' })}`}
+          total={data?.total}
         />
       </div>
 
@@ -670,6 +791,7 @@ function PeopleView({ frame, onChange, onOpen }) {
             {f.search ? ' Only those matching your search are counted.' : ''} Click someone with an account to see their
             transactions.
           </div>
+          <ExcelLimit total={data.total} />
 
           <div className="mt-3 overflow-hidden rounded-2xl border border-white/10">
             <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.1fr)] gap-4 bg-white/[0.03] px-4 py-2 text-[11px] tracking-[0.14em] text-muted uppercase">
@@ -711,11 +833,11 @@ function PeopleView({ frame, onChange, onOpen }) {
                       >
                         {p.stage}
                       </span>
-                      <div className="mt-1">Started {time(p.started)}</div>
+                      <div className="mt-1">Started {stamp(p.started, ranged)}</div>
                     </>
                   ) : (
                     <>
-                      <div className="text-slate-200">{allTime ? when(p.opened) : time(p.opened)}</div>
+                      <div className="text-slate-200">{stamp(p.opened, allTime || ranged)}</div>
                       {p.minutes_to_open != null && <div>took {p.minutes_to_open} min</div>}
                     </>
                   )}
@@ -733,40 +855,26 @@ function PeopleView({ frame, onChange, onOpen }) {
 function MoneyInView({ frame, onChange, onOpen }) {
   const f = { page: 1, ...frame, date: frame.date || todayIso() }
   const { data, loading, error } = useApi(
-    `/api/explore/money-in?${query({ date: f.date, search: f.search, page: f.page })}`,
+    `/api/explore/money-in?${query({ date: f.date, until: f.until, search: f.search, page: f.page })}`,
   )
   const set = (patch) => onChange({ ...patch, page: patch.page ?? 1 })
   const isToday = f.date === todayIso()
-  const step =
-    'rounded-lg border border-white/10 px-2.5 py-2 text-sm text-muted hover:text-slate-100 disabled:opacity-30'
+  const ranged = Boolean(f.until && f.until !== f.date)
   const cols = 'grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.9fr)] gap-4'
   return (
     <div>
       <div className="text-xs tracking-[0.18em] text-muted uppercase">Money in</div>
       <h2 className="mt-1 text-2xl font-semibold tracking-tight">
-        Received from other banks {isToday ? 'today' : `on ${dayName(f.date)}`}
+        Received from other banks{' '}
+        {ranged ? `${shortDay(f.date)} – ${shortDay(f.until)}` : isToday ? 'today' : `on ${dayName(f.date)}`}
       </h2>
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <button type="button" className={step} onClick={() => set({ date: shiftDay(f.date, -1) })}>
-          ← Day before
-        </button>
-        <input
-          type="date"
-          value={f.date}
-          max={todayIso()}
-          onChange={(e) => e.target.value && set({ date: e.target.value })}
-          className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-slate-100 [color-scheme:dark]"
-        />
-        <button
-          type="button"
-          className={step}
-          disabled={f.date >= todayIso()}
-          onClick={() => set({ date: shiftDay(f.date, 1) })}
-        >
-          Day after →
-        </button>
+      <DateRange date={f.date} until={f.until} maxDays={RANGE_DAYS.money} onChange={set} />
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         <SearchBox value={f.search} onSearch={(search) => set({ search })} placeholder="Account number or narration" />
-        <DownloadButton href={`/api/explore/money-in?${query({ date: f.date, search: f.search, format: 'xlsx' })}`} />
+        <DownloadButton
+          href={`/api/explore/money-in?${query({ date: f.date, until: f.until, search: f.search, format: 'xlsx' })}`}
+          total={data?.total}
+        />
       </div>
       {!data ? (
         <Loading error={error} />
@@ -782,6 +890,7 @@ function MoneyInView({ frame, onChange, onOpen }) {
               <div className="text-xs text-muted">Total received</div>
             </div>
           </div>
+          <ExcelLimit total={data.total} />
           <div className="mt-3 overflow-hidden rounded-2xl border border-white/10">
             <div className={`${cols} bg-white/[0.03] px-4 py-2 text-[11px] tracking-[0.14em] text-muted uppercase`}>
               <span>Received by</span>
@@ -803,7 +912,7 @@ function MoneyInView({ frame, onChange, onOpen }) {
                   {m.narration && <div className="truncate text-xs text-muted">{m.narration}</div>}
                 </div>
                 <div className="tabular text-slate-100">{naira(m.amount)}</div>
-                <div className="text-right text-xs text-muted">{time(m.at)}</div>
+                <div className="text-right text-xs text-muted">{stamp(m.at, ranged)}</div>
               </button>
             ))}
           </div>

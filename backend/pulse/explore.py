@@ -1,8 +1,9 @@
 from datetime import date, datetime, timedelta
 from math import ceil
 
+from django.core.cache import cache
 from django.db import DatabaseError
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.views.decorators.http import require_GET
 
 from . import banks as bank_names
@@ -10,11 +11,14 @@ from .auth import explorer_required
 from .export import MAX_ROWS, excel_response, wants_excel
 from .live import KINDS
 from .report_data import SIDES
-from .queries import FUNNEL_DAYS, LEGACY, WEBHOOKS, ONBOARDING, OUTCOME_SQL, PAYMENTS, PHASE_LABELS, WAT, fetch, lagos_now
+from .queries import (FUNNEL_DAYS, LEGACY, ONBOARDING, OUTCOME_SQL, PAYMENTS, PHASE_LABELS, WAT, WEBHOOKS, fetch,
+                      lagos_now, machine_lagos_now)
 from .reasons import REASON_SQL, classify
 
 ACCOUNTS = "`dashmfb-cba-mcs`.accounts"
 PAGE_SIZE = 50
+RANGE_DAYS = {"transactions": 31, "money_in": 31, "people": 366}
+RANGE_CACHE_SECONDS = 300
 STATUSES = {"SUCCESS", "FAILED", "REVERSED", "PENDING"}
 OUTCOME_LABELS = {"SUCCESS": "Successful", "FAILED": "Failed", "REVERSED": "Reversed", "PENDING": "Pending"}
 TX_COLUMNS = [
@@ -94,6 +98,31 @@ def parse_day(value):
         return lagos_now().date()
 
 
+class RangeTooLong(Exception):
+    pass
+
+
+def parse_span(g, max_days):
+    day = parse_day(g.get("date"))
+    try:
+        until = max(date.fromisoformat(g.get("until")), day)
+    except (TypeError, ValueError):
+        return day, day
+    if (until - day).days >= max_days:
+        raise RangeTooLong(max_days)
+    return day, until
+
+
+def span_name(day, until):
+    return f"{day}" if until == day else f"{day}_to_{until}"
+
+
+def too_many_rows(total):
+    return HttpResponse(f"This list has {total:,} rows, more than the {MAX_ROWS:,} an Excel download can hold. "
+                        "Pick a shorter date range or add a filter, then download again.",
+                        status=400, content_type="text/plain; charset=utf-8")
+
+
 def parse_int(value, default=None):
     try:
         return int(value)
@@ -122,6 +151,9 @@ def unavailable(view):
             return view(request, *args, **kwargs)
         except DatabaseError:
             return JsonResponse({"error": "unavailable"}, status=503)
+        except RangeTooLong as e:
+            days = e.args[0]
+            return JsonResponse({"error": f"Pick {days} days or fewer.", "max_days": days}, status=400)
 
     return wrapped
 
@@ -140,8 +172,13 @@ DETAIL_KEYS = ["narration", "bank_code", "cba_reference", "provider_reference", 
                "provider_message", "reversal_message"]
 
 
-def day_rows(day, detail=False):
+def span_rows(day, until, detail=False):
+    key = f"explore:tx:{day}:{until}"
+    keep = not detail and until < machine_lagos_now().date()
+    if keep and (found := cache.get(key)) is not None:
+        return found
     start = datetime.combine(day, datetime.min.time())
+    end = datetime.combine(until, datetime.min.time()) + timedelta(days=1)
     rows = fetch(f"""
         SELECT l.ID AS id, l.CREATED AS created, l.TRANSACTION_TYPE AS kind, l.AMOUNT AS amount,
                l.ACCOUNT_NUMBER AS account, l.BENEFICIARY_BANK_NAME AS bank, l.BENEFICIARY_NAME AS beneficiary,
@@ -152,7 +189,7 @@ def day_rows(day, detail=False):
         LEFT JOIN {PAYMENTS} p
                ON p.payment_reference = l.PAYMENT_REFERENCE COLLATE utf8mb4_unicode_ci
         WHERE l.CREATED >= %(start)s AND l.CREATED < %(end)s
-    """, {"start": start, "end": start + timedelta(days=1)})
+    """, {"start": start, "end": end})
     out = []
     for r in rows:
         reason, reason_kind = classify(r["message"]) if r["outcome"] == "FAILED" else (None, None)
@@ -178,6 +215,8 @@ def day_rows(day, detail=False):
             row["updated"] = iso(r["updated"])
             row["reversed_at"] = iso(r["reversed_at"])
         out.append(row)
+    if keep:
+        cache.set(key, out, RANGE_CACHE_SECONDS)
     return out
 
 
@@ -206,7 +245,7 @@ def matches(row, q):
 @unavailable
 def transactions(request):
     g = request.GET
-    day = parse_day(g.get("date"))
+    day, until = parse_span(g, RANGE_DAYS["transactions"])
     status = (g.get("status") or "").upper()
     q = {
         "status": status if status in STATUSES else None,
@@ -216,11 +255,13 @@ def transactions(request):
         "hour": parse_int(g.get("hour")),
         "search": words(g.get("search") or ""),
     }
-    all_rows = day_rows(day, detail=wants_excel(request))
+    all_rows = span_rows(day, until, detail=wants_excel(request))
     rows = sorted((r for r in all_rows if matches(r, q)), key=lambda r: (r["at"], r["id"]), reverse=True)
     rows = [{k: v for k, v in r.items() if k != "words"} for r in rows]
 
     if wants_excel(request):
+        if len(rows) > MAX_ROWS:
+            return too_many_rows(len(rows))
         numbers = sorted({r["account"] for r in rows if r["account"]})
         contacts = {}
         for i in range(0, len(numbers), 1000):
@@ -229,7 +270,7 @@ def transactions(request):
                 FROM {ACCOUNTS} WHERE account_number IN %(n)s
             """, {"n": numbers[i:i + 1000]}):
                 contacts[a["account_number"]] = a
-        return excel_response(f"Transactions_{day}", TX_COLUMNS, [{
+        return excel_response(f"Transactions_{span_name(day, until)}", TX_COLUMNS, [{
             **r,
             "type": KINDS.get(r["kind"], r["kind"]),
             "status": OUTCOME_LABELS[r["outcome"]],
@@ -248,6 +289,7 @@ def transactions(request):
 
     return JsonResponse({
         "date": day.isoformat(),
+        "until": until.isoformat() if until != day else None,
         "filters": {k: sorted(v) if isinstance(v, set) else v for k, v in q.items() if v not in (None, "", set())},
         "summary": summary,
         "reasons": sorted(({"reason": k, "count": v} for k, v in reasons.items()), key=lambda r: -r["count"]),
@@ -417,17 +459,6 @@ def onboarding(request):
     return JsonResponse({"phase": phase, "label": PHASE_LABELS[phase], "scope": scope, **paged(items, request)})
 
 
-MAX_RANGE_DAYS = 400
-
-
-def parse_range_end(start, value):
-    try:
-        end = date.fromisoformat(value)
-    except (TypeError, ValueError):
-        return start
-    return min(max(end, start), start + timedelta(days=MAX_RANGE_DAYS))
-
-
 STAGE_FILTERS = {
     "opened": "o.ACCOUNT_OPENED_DATE IS NOT NULL",
     "not_opened": "o.ACCOUNT_OPENED_DATE IS NULL",
@@ -447,8 +478,7 @@ def people(request):
     g = request.GET
     mode = "signups" if g.get("mode") == "signups" else "opened"
     all_time = mode == "opened" and g.get("date") == "all"
-    day = None if all_time else parse_day(g.get("date"))
-    until = parse_range_end(day, g.get("until")) if day else None
+    day, until = (None, None) if all_time else parse_span(g, RANGE_DAYS["people"])
     column = "o.DATE_CREATED" if mode == "signups" else "o.ACCOUNT_OPENED_DATE"
 
     where, params = [], {}
@@ -481,6 +511,8 @@ def people(request):
     pages = max(ceil(total / PAGE_SIZE), 1)
     page = min(max(parse_int(g.get("page"), 1), 1), pages)
     download = wants_excel(request)
+    if download and total > MAX_ROWS:
+        return too_many_rows(total)
     limit, offset = (MAX_ROWS, 0) if download else (PAGE_SIZE, (page - 1) * PAGE_SIZE)
     rows = fetch(f"""
         SELECT o.ID AS id, o.FIRSTNAME AS first, o.LASTNAME AS last, o.EMAIL AS email, o.PHONE_NUMBER AS phone,
@@ -522,7 +554,7 @@ def people(request):
             "done": bool(r["opened"]),
         })
     if download:
-        span = "All-accounts" if all_time else f"{day}" + (f"_to_{until}" if until != day else "")
+        span = "All-accounts" if all_time else span_name(day, until)
         what = "Sign-ups" if mode == "signups" else "Accounts-opened"
         return excel_response(f"{what}_{span}", PEOPLE_COLUMNS, items)
     return JsonResponse({
@@ -542,9 +574,9 @@ def people(request):
 @unavailable
 def money_in(request):
     g = request.GET
-    day = parse_day(g.get("date"))
+    day, until = parse_span(g, RANGE_DAYS["money_in"])
     start = datetime.combine(day, datetime.min.time()) - WAT
-    params = {"start": start, "end": start + timedelta(days=1)}
+    params = {"start": start, "end": datetime.combine(until, datetime.min.time()) - WAT + timedelta(days=1)}
     where = ["created_at >= %(start)s", "created_at < %(end)s",
              "JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.drCr')) = 'CR'",
              "JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.service')) = 'INWARD'",
@@ -565,13 +597,16 @@ def money_in(request):
     pages = max(ceil(total / PAGE_SIZE), 1)
     page = min(max(parse_int(g.get("page"), 1), 1), pages)
     download = wants_excel(request)
+    if download and total > MAX_ROWS:
+        return too_many_rows(total)
     limit, offset = (MAX_ROWS, 0) if download else (PAGE_SIZE, (page - 1) * PAGE_SIZE)
     rows = fetch(f"{base} ORDER BY at DESC LIMIT {limit} OFFSET {offset}", params)
     numbers = sorted({r["account"] for r in rows if r["account"]})
     names = {}
-    if numbers:
-        names = {a["account_number"]: a["account_name"] for a in fetch(
-            f"SELECT account_number, account_name FROM {ACCOUNTS} WHERE account_number IN %(n)s", {"n": numbers})}
+    for i in range(0, len(numbers), 1000):
+        names.update({a["account_number"]: a["account_name"] for a in fetch(
+            f"SELECT account_number, account_name FROM {ACCOUNTS} WHERE account_number IN %(n)s",
+            {"n": numbers[i:i + 1000]})})
     items = [{
         "ref": r["provider_ref"],
         "at": utc_to_lagos(r["at"]),
@@ -581,9 +616,10 @@ def money_in(request):
         "narration": r["narration"],
     } for r in rows]
     if download:
-        return excel_response(f"Money-in_{day}", MONEY_IN_COLUMNS, items)
+        return excel_response(f"Money-in_{span_name(day, until)}", MONEY_IN_COLUMNS, items)
     return JsonResponse({
         "date": day.isoformat(),
+        "until": until.isoformat() if until != day else None,
         "total": total,
         "value": float(summary["value"]),
         "page": page,
