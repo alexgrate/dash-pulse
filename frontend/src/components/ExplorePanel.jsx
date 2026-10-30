@@ -58,7 +58,6 @@ const todayIso = () => new Date(Date.now() + 3600e3).toISOString().slice(0, 10)
 const stamp = (iso, ranged) => (ranged ? when(iso) : time(iso))
 
 const EXCEL_ROWS = 50000
-const RANGE_DAYS = { list: 31, money: 31, people: 366 }
 
 const pill = (on) =>
   `rounded-full px-3 py-1 text-xs ${on ? 'bg-brand text-white ring-1 ring-brand-soft/40' : 'bg-white/5 text-muted hover:text-slate-100'}`
@@ -314,8 +313,7 @@ function presets() {
   ]
 }
 
-function DateRange({ date, until, maxDays, onChange }) {
-  const [warning, setWarning] = useState('')
+function DateRange({ date, until, onChange }) {
   const today = todayIso()
   const ranged = until != null
   const end = until ?? date
@@ -324,18 +322,12 @@ function DateRange({ date, until, maxDays, onChange }) {
   function pick(from, wanted) {
     const to = wanted != null && wanted > today ? today : wanted
     if (from > today) return
-    if (to != null && daysBetween(from, to) >= maxDays) {
-      setWarning(`Pick ${maxDays} days or fewer for this list.`)
-      return
-    }
-    setWarning('')
     onChange({ date: from, until: to ?? undefined })
   }
 
   function changeFrom(from) {
     if (!ranged) return pick(from, null)
-    const keep = from <= end && daysBetween(from, end) < maxDays
-    pick(from, keep ? end : shiftDay(from, length - 1))
+    pick(from, from <= end ? end : shiftDay(from, length - 1))
   }
 
   function move(direction) {
@@ -390,7 +382,7 @@ function DateRange({ date, until, maxDays, onChange }) {
               type="date"
               aria-label="To"
               value={end}
-              max={[today, shiftDay(date, maxDays - 1)].sort()[0]}
+              max={today}
               onChange={(e) => e.target.value && pick(e.target.value < date ? e.target.value : date, e.target.value)}
               className={DATE_INPUT}
             />
@@ -400,7 +392,6 @@ function DateRange({ date, until, maxDays, onChange }) {
           {ranged ? 'Later' : 'Day after'} →
         </button>
       </div>
-      {warning && <div className="mt-2 text-xs text-warn">{warning}</div>}
     </div>
   )
 }
@@ -427,7 +418,7 @@ function ListView({ filters, onChange, onOpen }) {
   return (
     <div>
       <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
-      <DateRange date={f.date} until={f.until} maxDays={RANGE_DAYS.list} onChange={set} />
+      <DateRange date={f.date} until={f.until} onChange={set} />
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <SearchBox
           value={f.search}
@@ -771,7 +762,7 @@ function PeopleView({ frame, onChange, onOpen }) {
           ))}
       </div>
 
-      {!allTime && <DateRange date={f.date} until={f.until} maxDays={RANGE_DAYS.people} onChange={set} />}
+      {!allTime && <DateRange date={f.date} until={f.until} onChange={set} />}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <SearchBox
@@ -871,7 +862,7 @@ function MoneyInView({ frame, onChange, onOpen }) {
         Received from other banks{' '}
         {ranged ? `${shortDay(f.date)} – ${shortDay(f.until)}` : isToday ? 'today' : `on ${dayName(f.date)}`}
       </h2>
-      <DateRange date={f.date} until={f.until} maxDays={RANGE_DAYS.money} onChange={set} />
+      <DateRange date={f.date} until={f.until} onChange={set} />
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <SearchBox value={f.search} onSearch={(search) => set({ search })} placeholder="Account number or narration" />
         <DownloadButton

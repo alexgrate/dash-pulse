@@ -1,4 +1,6 @@
+import hashlib
 from datetime import date, datetime, timedelta
+from functools import wraps
 from math import ceil
 
 from django.core.cache import cache
@@ -17,8 +19,7 @@ from .reasons import REASON_SQL, classify
 
 ACCOUNTS = "`dashmfb-cba-mcs`.accounts"
 PAGE_SIZE = 50
-RANGE_DAYS = {"transactions": 31, "money_in": 31, "people": 366}
-RANGE_CACHE_SECONDS = 300
+PAST_CACHE_SECONDS = 300
 STATUSES = {"SUCCESS", "FAILED", "REVERSED", "PENDING"}
 OUTCOME_LABELS = {"SUCCESS": "Successful", "FAILED": "Failed", "REVERSED": "Reversed", "PENDING": "Pending"}
 TX_COLUMNS = [
@@ -98,19 +99,12 @@ def parse_day(value):
         return lagos_now().date()
 
 
-class RangeTooLong(Exception):
-    pass
-
-
-def parse_span(g, max_days):
+def parse_span(g):
     day = parse_day(g.get("date"))
     try:
-        until = max(date.fromisoformat(g.get("until")), day)
+        return day, max(date.fromisoformat(g.get("until")), day)
     except (TypeError, ValueError):
         return day, day
-    if (until - day).days >= max_days:
-        raise RangeTooLong(max_days)
-    return day, until
 
 
 def span_name(day, until):
@@ -151,9 +145,28 @@ def unavailable(view):
             return view(request, *args, **kwargs)
         except DatabaseError:
             return JsonResponse({"error": "unavailable"}, status=503)
-        except RangeTooLong as e:
-            days = e.args[0]
-            return JsonResponse({"error": f"Pick {days} days or fewer.", "max_days": days}, status=400)
+
+    return wrapped
+
+
+def remember_past(view):
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        try:
+            last = date.fromisoformat(request.GET.get("until") or request.GET.get("date"))
+        except (TypeError, ValueError):
+            last = None
+        if wants_excel(request) or last is None or last >= machine_lagos_now().date():
+            return view(request, *args, **kwargs)
+        key = "explore:" + hashlib.sha256(request.get_full_path().encode()).hexdigest()
+        body = cache.get(key)
+        if body is None:
+            response = view(request, *args, **kwargs)
+            if response.status_code != 200:
+                return response
+            body = response.content
+            cache.set(key, body, PAST_CACHE_SECONDS)
+        return HttpResponse(body, content_type="application/json")
 
     return wrapped
 
@@ -172,80 +185,94 @@ DETAIL_KEYS = ["narration", "bank_code", "cba_reference", "provider_reference", 
                "provider_message", "reversal_message"]
 
 
-def span_rows(day, until, detail=False):
-    key = f"explore:tx:{day}:{until}"
-    keep = not detail and until < machine_lagos_now().date()
-    if keep and (found := cache.get(key)) is not None:
-        return found
-    start = datetime.combine(day, datetime.min.time())
-    end = datetime.combine(until, datetime.min.time()) + timedelta(days=1)
-    rows = fetch(f"""
+TX_FROM = f"""
+        FROM {LEGACY} l
+        LEFT JOIN {PAYMENTS} p
+               ON p.payment_reference = l.PAYMENT_REFERENCE COLLATE utf8mb4_unicode_ci"""
+TX_SELECT = f"""
         SELECT l.ID AS id, l.CREATED AS created, l.TRANSACTION_TYPE AS kind, l.AMOUNT AS amount,
                l.ACCOUNT_NUMBER AS account, l.BENEFICIARY_BANK_NAME AS bank, l.BENEFICIARY_NAME AS beneficiary,
                l.PAYMENT_REFERENCE AS reference, l.BENEFICIARY_ACCOUNT AS beneficiary_account,
                p.source_account_name AS sender,
-               {OUTCOME_SQL} AS outcome, {REASON_SQL} AS message{DETAIL_SQL if detail else ""}
-        FROM {LEGACY} l
-        LEFT JOIN {PAYMENTS} p
-               ON p.payment_reference = l.PAYMENT_REFERENCE COLLATE utf8mb4_unicode_ci
-        WHERE l.CREATED >= %(start)s AND l.CREATED < %(end)s
-    """, {"start": start, "end": end})
-    out = []
-    for r in rows:
-        reason, reason_kind = classify(r["message"]) if r["outcome"] == "FAILED" else (None, None)
-        row = {
-            "id": int(r["id"]),
-            "at": iso(r["created"]),
-            "kind": r["kind"],
-            "amount": float(r["amount"] or 0),
-            "account": r["account"],
-            "beneficiary": r["beneficiary"],
-            "beneficiary_account": r["beneficiary_account"],
-            "sender": r["sender"],
-            "bank": bank_names.canonical(r["bank"]) if r["bank"] else None,
-            "reference": r["reference"],
-            "outcome": r["outcome"],
-            "reason": reason,
-            "reason_kind": reason_kind,
-            "words": words(" ".join(str(v) for v in (
-                r["reference"], r["account"], r["beneficiary"], r["beneficiary_account"], r["sender"]) if v)),
-        }
-        if detail:
-            row.update({k: r[k] for k in DETAIL_KEYS})
-            row["updated"] = iso(r["updated"])
-            row["reversed_at"] = iso(r["reversed_at"])
-        out.append(row)
-    if keep:
-        cache.set(key, out, RANGE_CACHE_SECONDS)
-    return out
+               {OUTCOME_SQL} AS outcome, {REASON_SQL} AS message"""
+
+
+def tx_row(r, detail=False):
+    reason, reason_kind = classify(r["message"]) if r["outcome"] == "FAILED" else (None, None)
+    row = {
+        "id": int(r["id"]),
+        "at": iso(r["created"]),
+        "kind": r["kind"],
+        "amount": float(r["amount"] or 0),
+        "account": r["account"],
+        "beneficiary": r["beneficiary"],
+        "beneficiary_account": r["beneficiary_account"],
+        "sender": r["sender"],
+        "bank": bank_names.canonical(r["bank"]) if r["bank"] else None,
+        "reference": r["reference"],
+        "outcome": r["outcome"],
+        "reason": reason,
+        "reason_kind": reason_kind,
+    }
+    if detail:
+        row.update({k: r[k] for k in DETAIL_KEYS})
+        row["updated"] = iso(r["updated"])
+        row["reversed_at"] = iso(r["reversed_at"])
+    return row
+
+
+def among(column, values, params, name):
+    present = sorted(v for v in values if v is not None)
+    parts = []
+    if present:
+        params[name] = present
+        parts.append(f"{column} IN %({name})s")
+    if None in values:
+        parts.append(f"{column} IS NULL")
+    return f"({' OR '.join(parts)})" if parts else "1 = 0"
+
+
+def tx_filters(day, until, q):
+    params = {
+        "start": datetime.combine(day, datetime.min.time()),
+        "end": datetime.combine(until, datetime.min.time()) + timedelta(days=1),
+    }
+    where = ["l.CREATED >= %(start)s", "l.CREATED < %(end)s"]
+    if q["status"]:
+        params["status"] = q["status"]
+        where.append(f"{OUTCOME_SQL} = %(status)s")
+    if q["kinds"]:
+        params["kinds"] = sorted(q["kinds"])
+        where.append("l.TRANSACTION_TYPE IN %(kinds)s")
+    if q["hour"] is not None:
+        params["hour"] = q["hour"]
+        where.append("HOUR(l.CREATED) = %(hour)s")
+    for n, word in enumerate(q["search"].split()[:5]):
+        params[f"w{n}"] = f"%{word}%"
+        where.append(f"(LOWER(CONCAT_WS(' ', l.PAYMENT_REFERENCE, l.ACCOUNT_NUMBER, l.BENEFICIARY_NAME, "
+                     f"l.BENEFICIARY_ACCOUNT)) LIKE %(w{n})s OR LOWER(p.source_account_name) LIKE %(w{n})s)")
+    if q["bank"]:
+        wanted = bank_names.key(q["bank"])
+        names = {r["bank"] for r in fetch(f"""
+            SELECT DISTINCT l.BENEFICIARY_BANK_NAME AS bank FROM {LEGACY} l
+            WHERE l.CREATED >= %(start)s AND l.CREATED < %(end)s
+        """, params)}
+        where.append(among("l.BENEFICIARY_BANK_NAME", {n for n in names if bank_names.key(n) == wanted},
+                           params, "banks"))
+    return where, params
 
 
 def words(text):
     return " ".join(text.lower().split())
 
 
-def matches(row, q):
-    if q["status"] and row["outcome"] != q["status"]:
-        return False
-    if q["kinds"] and row["kind"] not in q["kinds"]:
-        return False
-    if q["bank"] and bank_names.key(row["bank"]) != bank_names.key(q["bank"]):
-        return False
-    if q["reason"] and row["reason"] != q["reason"]:
-        return False
-    if q["hour"] is not None and datetime.fromisoformat(row["at"]).hour != q["hour"]:
-        return False
-    if q["search"] and not all(w in row["words"] for w in q["search"].split()):
-        return False
-    return True
-
-
 @require_GET
 @explorer_required
 @unavailable
+@remember_past
 def transactions(request):
     g = request.GET
-    day, until = parse_span(g, RANGE_DAYS["transactions"])
+    day, until = parse_span(g)
     status = (g.get("status") or "").upper()
     q = {
         "status": status if status in STATUSES else None,
@@ -255,13 +282,49 @@ def transactions(request):
         "hour": parse_int(g.get("hour")),
         "search": words(g.get("search") or ""),
     }
-    all_rows = span_rows(day, until, detail=wants_excel(request))
-    rows = sorted((r for r in all_rows if matches(r, q)), key=lambda r: (r["at"], r["id"]), reverse=True)
-    rows = [{k: v for k, v in r.items() if k != "words"} for r in rows]
+    where, params = tx_filters(day, until, q)
+    groups = fetch(f"""
+        SELECT outcome, CASE WHEN outcome = 'FAILED' THEN message END AS message,
+               COUNT(*) AS n, COALESCE(SUM(amount), 0) AS value
+        FROM (SELECT {OUTCOME_SQL} AS outcome, {REASON_SQL} AS message, l.AMOUNT AS amount
+              {TX_FROM} WHERE {" AND ".join(where)}) t
+        GROUP BY 1, 2
+    """, params)
 
-    if wants_excel(request):
-        if len(rows) > MAX_ROWS:
-            return too_many_rows(len(rows))
+    summary = {s.lower(): 0 for s in STATUSES}
+    summary["value"] = 0.0
+    reasons, messages = {}, set()
+    for grp in groups:
+        reason = classify(grp["message"])[0] if grp["outcome"] == "FAILED" else None
+        if q["reason"] and reason != q["reason"]:
+            continue
+        if reason:
+            reasons[reason] = reasons.get(reason, 0) + int(grp["n"])
+            messages.add(grp["message"])
+        summary[grp["outcome"].lower()] += int(grp["n"])
+        if grp["outcome"] == "SUCCESS":
+            summary["value"] += float(grp["value"])
+    summary["value"] = round(summary["value"], 2)
+    if q["reason"]:
+        where.append(f"{OUTCOME_SQL} = 'FAILED'")
+        where.append(among(REASON_SQL, messages, params, "messages"))
+    total = sum(summary[s.lower()] for s in STATUSES)
+
+    download = wants_excel(request)
+    if download and total > MAX_ROWS:
+        return too_many_rows(total)
+    pages = max(ceil(total / PAGE_SIZE), 1)
+    page = min(max(parse_int(g.get("page"), 1), 1), pages)
+    limit, offset = (MAX_ROWS, 0) if download else (PAGE_SIZE, (page - 1) * PAGE_SIZE)
+    rows = [tx_row(r, download) for r in fetch(f"""
+        {TX_SELECT}{DETAIL_SQL if download else ""}
+        {TX_FROM}
+        WHERE {" AND ".join(where)}
+        ORDER BY l.CREATED DESC, l.ID DESC
+        LIMIT {limit} OFFSET {offset}
+    """, params)]
+
+    if download:
         numbers = sorted({r["account"] for r in rows if r["account"]})
         contacts = {}
         for i in range(0, len(numbers), 1000):
@@ -279,22 +342,22 @@ def transactions(request):
             "customer_phone": contacts.get(r["account"], {}).get("phone"),
             "customer_email": contacts.get(r["account"], {}).get("email"),
         } for r in rows])
-    summary = {s.lower(): 0 for s in STATUSES}
-    reasons = {}
-    for r in rows:
-        summary[r["outcome"].lower()] += 1
-        if r["reason"]:
-            reasons[r["reason"]] = reasons.get(r["reason"], 0) + 1
-    summary["value"] = round(sum(r["amount"] for r in rows if r["outcome"] == "SUCCESS"), 2)
 
+    kinds = fetch(f"""
+        SELECT DISTINCT l.TRANSACTION_TYPE AS kind FROM {LEGACY} l
+        WHERE l.CREATED >= %(start)s AND l.CREATED < %(end)s
+    """, params)
     return JsonResponse({
         "date": day.isoformat(),
         "until": until.isoformat() if until != day else None,
         "filters": {k: sorted(v) if isinstance(v, set) else v for k, v in q.items() if v not in (None, "", set())},
         "summary": summary,
         "reasons": sorted(({"reason": k, "count": v} for k, v in reasons.items()), key=lambda r: -r["count"]),
-        "kinds": sorted({r["kind"] for r in all_rows if r["kind"]}),
-        **paged(rows, request),
+        "kinds": sorted({r["kind"] for r in kinds if r["kind"]}),
+        "total": total,
+        "page": page,
+        "pages": pages,
+        "items": rows,
     })
 
 
@@ -474,11 +537,12 @@ def stage_label(phase, opened):
 @require_GET
 @explorer_required
 @unavailable
+@remember_past
 def people(request):
     g = request.GET
     mode = "signups" if g.get("mode") == "signups" else "opened"
     all_time = mode == "opened" and g.get("date") == "all"
-    day, until = (None, None) if all_time else parse_span(g, RANGE_DAYS["people"])
+    day, until = (None, None) if all_time else parse_span(g)
     column = "o.DATE_CREATED" if mode == "signups" else "o.ACCOUNT_OPENED_DATE"
 
     where, params = [], {}
@@ -572,9 +636,10 @@ def people(request):
 @require_GET
 @explorer_required
 @unavailable
+@remember_past
 def money_in(request):
     g = request.GET
-    day, until = parse_span(g, RANGE_DAYS["money_in"])
+    day, until = parse_span(g)
     start = datetime.combine(day, datetime.min.time()) - WAT
     params = {"start": start, "end": datetime.combine(until, datetime.min.time()) - WAT + timedelta(days=1)}
     where = ["created_at >= %(start)s", "created_at < %(end)s",

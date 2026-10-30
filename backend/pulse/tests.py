@@ -375,9 +375,26 @@ class TrendTests(SimpleTestCase):
         self.assertEqual(s["vs_month_ago"], 0)
 
 
+def fake_tx_fetch(groups, rows, kinds=(), banks=(), contacts=()):
+    def fetch(sql, params=None):
+        if "GROUP BY 1, 2" in sql:
+            return [dict(g) for g in groups]
+        if "DISTINCT l.TRANSACTION_TYPE" in sql:
+            return [{"kind": k} for k in kinds]
+        if "DISTINCT l.BENEFICIARY_BANK_NAME" in sql:
+            return [{"bank": b} for b in banks]
+        if "ORDER BY l.CREATED" in sql:
+            return [dict(r) for r in rows]
+        return [dict(c) for c in contacts]
+
+    return fetch
+
+
 class ExploreAccessTests(TestCase):
     def setUp(self):
         from django.contrib.auth.models import Group
+
+        cache.clear()
         from django.http import JsonResponse
 
         from .auth import EXPLORER_GROUP, explorer_required
@@ -497,7 +514,8 @@ class ExploreAccessTests(TestCase):
                      "email": "ada@x.com"}]
         request = RequestFactory().get("/api/explore/transactions?date=2026-10-25&status=FAILED&format=xlsx")
         request.user = self.user
-        with patch("pulse.explore.fetch", side_effect=[[row], contacts]):
+        groups = [{"outcome": "FAILED", "message": "Transfer limit exceeded", "n": 1, "value": 19150}]
+        with patch("pulse.explore.fetch", side_effect=fake_tx_fetch(groups, [row], contacts=contacts)):
             response = explore.transactions(request)
         ws = load_workbook(BytesIO(response.content)).active
         got = {ws.cell(row=1, column=c).value: ws.cell(row=2, column=c).value for c in range(1, ws.max_column + 1)}
@@ -535,40 +553,64 @@ class ExploreAccessTests(TestCase):
         self.assertEqual(ws.max_row, 3)
         self.assertEqual([ws.cell(row=r, column=1).value for r in (2, 3)], ["Ada Bello", "Musa Sani"])
 
-    def test_transactions_cover_a_date_range(self):
+    def test_transactions_cover_any_date_range_and_remember_past_ones(self):
         from datetime import datetime
 
         from django.test import RequestFactory
 
         from . import explore
 
-        cache.clear()
         self.user.groups.add(self.group)
-        rows = [{"id": i, "created": datetime(2026, 10, d, 9, 0), "kind": "INTER", "amount": 100, "account": "0011",
+        rows = [{"id": i, "created": datetime(2026, 9, d, 9, 0), "kind": "INTER", "amount": 100, "account": "0011",
                  "bank": "OPAY", "beneficiary": "Ada", "reference": f"R{i}", "beneficiary_account": "8012",
-                 "sender": None, "outcome": "SUCCESS", "message": None} for i, d in ((1, 1), (2, 15))]
+                 "sender": None, "outcome": "SUCCESS", "message": None} for i, d in ((2, 15), (1, 1))]
+        groups = [{"outcome": "SUCCESS", "message": None, "n": 2, "value": 200}]
 
         def call(query):
             request = RequestFactory().get(f"/api/explore/transactions?{query}")
             request.user = self.user
             return explore.transactions(request)
 
-        with patch("pulse.explore.fetch", return_value=rows) as fetch:
-            body = json.loads(call("date=2026-10-01&until=2026-10-15").content)
-            call("date=2026-10-01&until=2026-10-15&page=2")
-        params = fetch.call_args.args[1]
-        self.assertEqual((params["start"], params["end"]), (datetime(2026, 10, 1), datetime(2026, 10, 16)))
-        self.assertEqual(fetch.call_count, 1)
-        self.assertEqual((body["until"], body["total"], body["summary"]["success"]), ("2026-10-15", 2, 2))
+        fake = fake_tx_fetch(groups, rows, kinds=["INTER"])
+        with patch("pulse.explore.fetch", side_effect=fake) as fetch:
+            body = json.loads(call("date=2026-09-01&until=2026-09-15").content)
+            again = json.loads(call("date=2026-09-01&until=2026-09-15").content)
+        params = fetch.call_args_list[1].args[1]
+        self.assertEqual((params["start"], params["end"]), (datetime(2026, 9, 1), datetime(2026, 9, 16)))
+        self.assertEqual(fetch.call_count, 3)
+        self.assertEqual(again, body)
+        self.assertEqual((body["until"], body["total"], body["summary"]["success"]), ("2026-09-15", 2, 2))
+        self.assertEqual((body["summary"]["value"], body["kinds"]), (200.0, ["INTER"]))
         self.assertEqual([i["id"] for i in body["items"]], [2, 1])
 
-        too_long = call("date=2026-10-01&until=2026-11-01")
-        self.assertEqual((too_long.status_code, json.loads(too_long.content)["max_days"]), (400, 31))
+        detailed = [{**r, **dict.fromkeys(explore.DETAIL_KEYS + ["updated", "reversed_at"])} for r in rows]
+        with patch("pulse.explore.fetch", side_effect=fake):
+            self.assertEqual(call("date=2025-10-01&until=2026-09-30").status_code, 200)
+        with patch("pulse.explore.fetch", side_effect=fake_tx_fetch(groups, detailed)):
+            response = call("date=2026-09-01&until=2026-09-15&format=xlsx")
+        self.assertIn("Transactions_2026-09-01_to_2026-09-15.xlsx", response["Content-Disposition"])
 
-        with patch("pulse.explore.fetch", side_effect=[[{**rows[0], **dict.fromkeys(
-                explore.DETAIL_KEYS + ["updated", "reversed_at"])}], []]):
-            response = call("date=2026-10-01&until=2026-10-15&format=xlsx")
-        self.assertIn("Transactions_2026-10-01_to_2026-10-15.xlsx", response["Content-Disposition"])
+    def test_failure_reason_filter_picks_the_matching_messages(self):
+        from django.test import RequestFactory
+
+        from . import explore
+
+        self.user.groups.add(self.group)
+        groups = [
+            {"outcome": "FAILED", "message": "Insufficient funds in account", "n": 4, "value": 400},
+            {"outcome": "FAILED", "message": "Transfer limit exceeded", "n": 2, "value": 200},
+            {"outcome": "FAILED", "message": None, "n": 1, "value": 100},
+            {"outcome": "SUCCESS", "message": None, "n": 9, "value": 900},
+        ]
+        request = RequestFactory().get("/api/explore/transactions?date=2026-09-01&until=2026-09-30"
+                                       "&reason=Insufficient%20funds")
+        request.user = self.user
+        with patch("pulse.explore.fetch", side_effect=fake_tx_fetch(groups, [])) as fetch:
+            body = json.loads(explore.transactions(request).content)
+        self.assertEqual((body["total"], body["summary"]["failed"], body["summary"]["success"]), (4, 4, 0))
+        self.assertEqual(body["reasons"], [{"reason": "Insufficient funds", "count": 4}])
+        page_params = fetch.call_args_list[1].args[1]
+        self.assertEqual(page_params["messages"], ["Insufficient funds in account"])
 
     def test_downloads_over_the_excel_limit_are_refused_clearly(self):
         from django.test import RequestFactory
@@ -591,29 +633,34 @@ class ExploreAccessTests(TestCase):
 
 
 class ExploreFilterTests(SimpleTestCase):
-    row = {"id": 1, "at": "2026-10-04T10:15:00", "kind": "INTER", "amount": 5000.0, "account": "2000000001",
-           "beneficiary": "Ada Bello", "bank": "OPay", "reference": "DMFB123", "outcome": "FAILED",
-           "reason": "Insufficient funds", "reason_kind": "customer", "words": "dmfb123 2000000001 ada bello"}
-
     def q(self, **kw):
         base = {"status": None, "kinds": set(), "bank": None, "reason": None, "hour": None, "search": ""}
         return {**base, **kw}
 
-    def test_filters_match_and_reject(self):
-        from .explore import matches
-        self.assertTrue(matches(self.row, self.q(status="FAILED", kinds={"INTER"}, bank="OPAY", hour=10)))
-        self.assertTrue(matches(self.row, self.q(reason="Insufficient funds", search="ada")))
-        self.assertFalse(matches(self.row, self.q(status="SUCCESS")))
-        self.assertFalse(matches(self.row, self.q(kinds={"Airtime"})))
-        self.assertFalse(matches(self.row, self.q(hour=11)))
-        self.assertFalse(matches(self.row, self.q(bank="GTBank")))
+    def test_filters_become_database_conditions(self):
+        from datetime import date
 
-    def test_search_ignores_spacing_case_and_word_order(self):
-        from .explore import matches, words
-        row = {**self.row, "words": words("DMFB9 0011273563 JAFAR  USMAN\u00a0 8020911442 Sebastine Agu")}
-        for typed in ("JAFAR USMAN", "usman jafar", " jafar  ", "sebastine", "8020911442"):
-            self.assertTrue(matches(row, self.q(search=words(typed))), typed)
-        self.assertFalse(matches(row, self.q(search=words("jafar bello"))))
+        from .explore import tx_filters, words
+
+        day = date(2026, 10, 4)
+        where, params = tx_filters(day, day, self.q(status="FAILED", kinds={"INTER"}, hour=10,
+                                                    search=words(" Jafar  USMAN ")))
+        self.assertEqual((params["status"], params["kinds"], params["hour"]), ("FAILED", ["INTER"], 10))
+        self.assertEqual((params["w0"], params["w1"]), ("%jafar%", "%usman%"))
+        self.assertEqual(len(where), 7)
+
+    def test_bank_filter_matches_every_spelling_of_the_bank(self):
+        from datetime import date
+
+        from .explore import tx_filters
+
+        day = date(2026, 10, 4)
+        with patch("pulse.explore.fetch", return_value=[{"bank": "OPay"}, {"bank": " OPay "}, {"bank": "GTBank"}]):
+            where, params = tx_filters(day, day, self.q(bank="OPay"))
+        self.assertEqual(params["banks"], [" OPay ", "OPay"])
+        with patch("pulse.explore.fetch", return_value=[{"bank": "GTBank"}]):
+            where, params = tx_filters(day, day, self.q(bank="OPay"))
+        self.assertEqual(where[-1], "1 = 0")
 
 
 class PasswordEmailTests(TestCase):
@@ -829,17 +876,15 @@ class SignupHistoryTests(SimpleTestCase):
         self.assertEqual((len(months), months[0], months[-1]), (12, date(2026, 10, 1), date(2025, 11, 1)))
         self.assertEqual(len(set(history_periods(wed, "day"))), 30)
 
-    def test_date_range_is_read_and_limited(self):
+    def test_date_range_is_read_without_a_limit(self):
         from datetime import date
 
-        from .explore import RangeTooLong, parse_span
+        from .explore import parse_span
 
         start = date(2026, 10, 1)
-        self.assertEqual(parse_span({"date": "2026-10-01"}, 31), (start, start))
-        self.assertEqual(parse_span({"date": "2026-10-01", "until": "2026-09-01"}, 31), (start, start))
-        self.assertEqual(parse_span({"date": "2026-10-01", "until": "2026-10-31"}, 31), (start, date(2026, 10, 31)))
-        with self.assertRaises(RangeTooLong):
-            parse_span({"date": "2026-10-01", "until": "2026-11-01"}, 31)
+        self.assertEqual(parse_span({"date": "2026-10-01"}), (start, start))
+        self.assertEqual(parse_span({"date": "2026-10-01", "until": "2026-09-01"}), (start, start))
+        self.assertEqual(parse_span({"date": "2026-01-01", "until": "2026-10-31"}), (date(2026, 1, 1), date(2026, 10, 31)))
 
 
 def fake_report_period(start, end):
