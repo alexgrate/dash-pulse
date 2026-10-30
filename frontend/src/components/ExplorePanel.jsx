@@ -332,6 +332,12 @@ function DateRange({ date, until, maxDays, onChange }) {
     onChange({ date: from, until: to ?? undefined })
   }
 
+  function changeFrom(from) {
+    if (!ranged) return pick(from, null)
+    const keep = from <= end && daysBetween(from, end) < maxDays
+    pick(from, keep ? end : shiftDay(from, length - 1))
+  }
+
   function move(direction) {
     if (!ranged) return pick(shiftDay(date, direction), null)
     const wholeMonth =
@@ -374,9 +380,7 @@ function DateRange({ date, until, maxDays, onChange }) {
           aria-label={ranged ? 'From' : 'Day'}
           value={date}
           max={today}
-          onChange={(e) =>
-            e.target.value && pick(e.target.value, ranged ? (e.target.value > end ? e.target.value : end) : null)
-          }
+          onChange={(e) => e.target.value && changeFrom(e.target.value)}
           className={DATE_INPUT}
         />
         {ranged && (
@@ -386,7 +390,6 @@ function DateRange({ date, until, maxDays, onChange }) {
               type="date"
               aria-label="To"
               value={end}
-              min={date}
               max={[today, shiftDay(date, maxDays - 1)].sort()[0]}
               onChange={(e) => e.target.value && pick(e.target.value < date ? e.target.value : date, e.target.value)}
               className={DATE_INPUT}
