@@ -5,6 +5,7 @@ import ExplorePanel from './components/ExplorePanel'
 import LoginScreen from './components/LoginScreen'
 import SceneDeck from './components/SceneDeck'
 import SetPasswordScreen, { readSetupLink } from './components/SetPasswordScreen'
+import SheetTabs, { SHEETS, SheetFrame } from './components/SheetTabs'
 import Ticker from './components/Ticker'
 import TopBar from './components/TopBar'
 import { useIdleCursor } from './hooks/useIdleCursor'
@@ -22,7 +23,11 @@ export default function App() {
   const [exploreOn, setExploreOn] = useState(false)
   const [stack, setStack] = useState([])
   const exploring = signedIn && session.canExplore && exploreOn
-  useIdleCursor(!exploring)
+  const [sheet, setSheet] = useState('pulse')
+  const [opened, setOpened] = useState(['pulse'])
+  const showSheets = signedIn && !setupLink
+  const onPulse = !showSheets || sheet === 'pulse'
+  useIdleCursor(!exploring && onPulse)
   const allowed = signedIn && session.canExplore
   const explore = useMemo(
     () => ({
@@ -54,47 +59,69 @@ export default function App() {
     return alert ? [alertScene, ...base] : base
   }, [data, alert])
 
+  function pickSheet(id) {
+    setSheet(id)
+    setOpened((o) => (o.includes(id) ? o : [...o, id]))
+  }
+
   return (
     <main className="relative isolate flex h-dvh flex-col overflow-hidden">
       <Backdrop alert={alert} />
-      <TopBar
-        offline={offline || session.status === 'offline'}
-        alert={alert}
-        insight={data ? topFor(data, sceneId) : null}
-        clockOffset={clockOffset}
-        username={signedIn ? session.username : null}
-        isAdmin={signedIn && session.isAdmin}
-        canExplore={signedIn && session.canExplore}
-        exploring={exploring}
-        onToggleExplore={() => {
-          setExploreOn((v) => !v)
-          setStack([])
-        }}
-        onSignOut={session.signOut}
-      />
-      {setupLink ? (
-        <SetPasswordScreen link={setupLink} onDone={finishSetup} />
-      ) : session.status === 'out' ? (
-        <LoginScreen onSignIn={session.signIn} notice={notice} sso={session.sso} />
-      ) : data ? (
-        <>
-          <ExploreContext.Provider value={explore}>
-            <SceneDeck scenes={playlist} data={data} interrupt={alert} frozen={exploring} onSceneChange={setSceneId} />
-          </ExploreContext.Provider>
-          <Ticker data={data} />
-          {exploring && <ExplorePanel stack={stack} setStack={setStack} />}
-        </>
-      ) : (
-        <div className="grid flex-1 place-items-center">
-          <motion.div
-            className="text-[clamp(14px,1.2vw,24px)] text-muted"
-            animate={{ opacity: [0.3, 1, 0.3] }}
-            transition={{ duration: 2, repeat: Infinity }}
-          >
-            {offline ? 'Waiting for the data service…' : 'Connecting…'}
-          </motion.div>
-        </div>
-      )}
+      <div className={onPulse ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
+        <TopBar
+          offline={offline || session.status === 'offline'}
+          alert={alert}
+          insight={data ? topFor(data, sceneId) : null}
+          clockOffset={clockOffset}
+          username={signedIn ? session.username : null}
+          isAdmin={signedIn && session.isAdmin}
+          canExplore={signedIn && session.canExplore}
+          exploring={exploring}
+          onToggleExplore={() => {
+            setExploreOn((v) => !v)
+            setStack([])
+          }}
+          onSignOut={() => {
+            setSheet('pulse')
+            setOpened(['pulse'])
+            return session.signOut()
+          }}
+        />
+        {setupLink ? (
+          <SetPasswordScreen link={setupLink} onDone={finishSetup} />
+        ) : session.status === 'out' ? (
+          <LoginScreen onSignIn={session.signIn} notice={notice} sso={session.sso} />
+        ) : data ? (
+          <>
+            <ExploreContext.Provider value={explore}>
+              <SceneDeck
+                scenes={playlist}
+                data={data}
+                interrupt={alert}
+                frozen={exploring}
+                onSceneChange={setSceneId}
+              />
+            </ExploreContext.Provider>
+            <Ticker data={data} />
+            {exploring && <ExplorePanel stack={stack} setStack={setStack} />}
+          </>
+        ) : (
+          <div className="grid flex-1 place-items-center">
+            <motion.div
+              className="text-[clamp(14px,1.2vw,24px)] text-muted"
+              animate={{ opacity: [0.3, 1, 0.3] }}
+              transition={{ duration: 2, repeat: Infinity }}
+            >
+              {offline ? 'Waiting for the data service…' : 'Connecting…'}
+            </motion.div>
+          </div>
+        )}
+      </div>
+      {showSheets &&
+        SHEETS.filter((s) => s.url && opened.includes(s.id)).map((s) => (
+          <SheetFrame key={s.id} sheet={s} visible={sheet === s.id} />
+        ))}
+      {showSheets && <SheetTabs active={sheet} onPick={pickSheet} />}
     </main>
   )
 }

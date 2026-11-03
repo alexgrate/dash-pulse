@@ -1146,7 +1146,7 @@ class OciTests(TestCase):
             r = self.client.get("/api/auth/oci", {"remember": "1"} if remember else {})
         return r, parse_qs(urlparse(r["Location"]).query)
 
-    def finish(self, query, email="maurice@dash-mfb.com", nonce=None, audience="client-1"):
+    def finish(self, query, email="maurice@dash-mfb.com", nonce=None, audience="client-1", profile=None):
         import time
 
         import jwt
@@ -1154,7 +1154,7 @@ class OciTests(TestCase):
         now = int(time.time())
         token = jwt.encode({"iss": self.found["issuer"], "aud": audience, "sub": email, "iat": now, "exp": now + 300,
                             "nonce": nonce or query["nonce"][0]}, self.key, algorithm="RS256")
-        replies = [{"id_token": token, "access_token": "at"}, {"email": email}]
+        replies = [{"id_token": token, "access_token": "at"}, {"email": email, **(profile or {})}]
         with patch("pulse.oci.discovery", return_value=self.found), \
              patch("pulse.oci.http_json", side_effect=replies), \
              patch("pulse.oci.signing_key", return_value=self.key.public_key()):
@@ -1187,12 +1187,32 @@ class OciTests(TestCase):
         self.assertEqual(self.finish(q, nonce="replayed")["Location"], "/?sso_error=failed")
         r, q = self.start()
         self.assertEqual(self.finish(q, audience="another-app")["Location"], "/?sso_error=failed")
-        r, q = self.start()
-        self.assertEqual(self.finish(q, email="stranger@dash-mfb.com")["Location"], "/?sso_error=no_access")
         self.client.cookies.clear()
         self.assertEqual(self.client.get("/oidc/callback/", {"code": "c1", "state": "x"})["Location"],
                          "/?sso_error=expired")
         self.assertFalse(self.signed_in()["authenticated"])
+
+    def test_new_dash_account_is_added_without_explore(self):
+        r, q = self.start()
+        profile = {"given_name": "Tolu", "family_name": "Ade"}
+        self.assertEqual(self.finish(q, email="Tolu.Ade@dash-mfb.com", profile=profile)["Location"], "/")
+        session = self.signed_in()
+        self.assertEqual((session["authenticated"], session["can_explore"]), (True, False))
+        user = get_user_model().objects.get(email="tolu.ade@dash-mfb.com")
+        self.assertEqual((user.username, user.first_name, user.last_name), ("tolu.ade@dash-mfb.com", "Tolu", "Ade"))
+        self.assertFalse(user.has_usable_password())
+
+        self.client.post("/api/auth/logout")
+        r, q = self.start()
+        self.finish(q, email="tolu.ade@dash-mfb.com")
+        self.assertEqual(get_user_model().objects.filter(email__iexact="tolu.ade@dash-mfb.com").count(), 1)
+
+    def test_switched_off_user_cannot_sign_in(self):
+        get_user_model().objects.filter(username="Maurice").update(is_active=False)
+        r, q = self.start()
+        self.assertEqual(self.finish(q)["Location"], "/?sso_error=no_access")
+        self.assertFalse(self.signed_in()["authenticated"])
+        self.assertEqual(get_user_model().objects.filter(email__iexact="maurice@dash-mfb.com").count(), 1)
 
     def test_password_login_is_only_for_superusers_when_oci_is_on(self):
         def login(name):

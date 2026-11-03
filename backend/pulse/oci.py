@@ -128,8 +128,20 @@ def find_user(claims):
     email = str(claims.get("email") or claims.get("sub") or "").strip().lower()
     if "@" not in email:
         return None
-    users = list(get_user_model().objects.filter(email__iexact=email, is_active=True)[:2])
-    return users[0] if len(users) == 1 else None
+    User = get_user_model()
+    users = list(User.objects.filter(email__iexact=email)[:2])
+    if len(users) > 1:
+        return None
+    if users:
+        return users[0] if users[0].is_active else None
+    if User.objects.filter(username__iexact=email).exists():
+        return None
+    user = User(username=email, email=email, first_name=str(claims.get("given_name") or "")[:150],
+                last_name=str(claims.get("family_name") or "")[:150])
+    user.set_unusable_password()
+    user.save()
+    logger.info("OCI sign-in added a new Pulse user: user=%s", email)
+    return user
 
 
 @require_GET
@@ -151,7 +163,8 @@ def callback(request):
         return back_to_login("failed")
     user = find_user(claims)
     if user is None:
-        logger.warning("OCI sign-in has no Pulse user: email=%s ip=%s", claims.get("email"), client_ip(request))
+        logger.warning("OCI sign-in refused, Pulse access switched off: email=%s ip=%s", claims.get("email"),
+                       client_ip(request))
         return back_to_login("no_access")
     login(request, user, backend="django.contrib.auth.backends.ModelBackend")
     remember = attempt.get("remember") is True

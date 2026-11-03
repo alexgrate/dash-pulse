@@ -6,7 +6,7 @@ import { api } from '../lib/api'
 const EASE = [0.16, 1, 0.3, 1]
 
 const SSO_ERRORS = {
-  no_access: 'Your Dash account is not set up for Dash Pulse. Ask an administrator to add you.',
+  no_access: 'Your access to Dash Pulse is switched off. Ask an administrator to turn it back on.',
   refused: 'Sign-in was cancelled or refused by the Dash account service.',
   expired: 'That sign-in attempt expired. Please try again.',
   failed: 'Signing in with your Dash account did not work. Please try again.',
