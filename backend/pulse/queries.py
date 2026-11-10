@@ -67,10 +67,10 @@ PHASE_ORDER = [
 
 PHASE_LABELS = {
     "EMAIL_VERIFICATION": "Never verified email",
-    "RESEND_EMAIL_VERIFICATION_LINK": "Asked for a new email link, never used it",
+    "RESEND_EMAIL_VERIFICATION_LINK": "Asked for new email link, never used",
     "EMAIL_CONFIRMATION": "Email confirmed, phone not started",
     "PHONE_VERIFICATION": "Never verified phone",
-    "RESEND_PHONE_OTP": "Asked for a new phone code, never entered it",
+    "RESEND_PHONE_OTP": "Asked for new phone code, never used",
     "PHONE_OTP_VALIDATED": "Phone verified, BVN not started",
     "BVN_VALIDATION": "Stuck at BVN check",
     "BVN_PHONE_MATCHED": "BVN matched, profile not created",
