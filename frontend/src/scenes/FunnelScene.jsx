@@ -113,7 +113,9 @@ export default function FunnelScene({ data }) {
             <Drill key={s.phase} to={stuck(s.phase)} className="-mx-2 px-2 py-0.5">
               <div className="flex items-end justify-between gap-3">
                 <span className="min-w-0">
-                  <span className="block truncate text-[clamp(11px,0.9vw,19px)] leading-tight">{s.label}</span>
+                  <span title={s.label} className="block truncate text-[clamp(11px,0.9vw,19px)] leading-tight">
+                    {s.label}
+                  </span>
                   <span className="block truncate font-mono text-[clamp(8px,0.6vw,12px)] leading-tight text-muted">
                     {s.phase}
                   </span>
