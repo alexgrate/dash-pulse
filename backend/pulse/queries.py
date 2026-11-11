@@ -396,7 +396,7 @@ def funnel(w, now):
             for p, label in PHASE_LABELS.items()
             if phases.get(p) or today_phases.get(p)
         ),
-        key=lambda s: (-s["count"], -s["today"]),
+        key=lambda s: PHASE_ORDER.index(s["phase"]),
     )
 
     minutes = [

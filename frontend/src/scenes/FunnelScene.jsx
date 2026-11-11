@@ -131,7 +131,7 @@ export default function FunnelScene({ data }) {
               </div>
               <div className="mt-1 h-[clamp(3px,0.4vh,6px)] overflow-hidden rounded-full bg-white/[0.05]">
                 <motion.div
-                  className={`h-full rounded-full ${i === 0 ? 'bg-bad' : 'bg-warn'}`}
+                  className={`h-full rounded-full ${s.count === stuckTop ? 'bg-bad' : 'bg-warn'}`}
                   initial={{ width: 0 }}
                   animate={{ width: `${(s.count / stuckTop) * 100}%` }}
                   transition={{ duration: 1.3, delay: 0.5 + i * 0.06, ease: EASE }}
